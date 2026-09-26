@@ -33,8 +33,8 @@ adapter and optimizations are implemented and validated.
 
 ## Build
 
-Requires JDK 21 or newer for the Fabric 1.21.1 build. The shared API/core
-artifacts still target Java 8 bytecode.
+Requires JDK 21 or newer for the Fabric 1.21.1 build. The shared API, runtime,
+and core artifacts target Java 8 bytecode.
 
 ## First server adapter
 
@@ -51,7 +51,6 @@ release inventory without labeling unimplemented targets as supported.
 
 ## License
 
-UMCE is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE). The Fabric
-artifact also bundles Gson under Apache-2.0; its license is included in
-[`third-party/GSON-LICENSE.txt`](third-party/GSON-LICENSE.txt) and in the
-artifact's `META-INF/licenses` directory.
+UMCE is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE). The CLI uses
+Gson under Apache-2.0; its license and attribution are recorded in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

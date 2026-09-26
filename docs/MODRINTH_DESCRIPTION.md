@@ -3,8 +3,9 @@
 UMCE is a server-first Minecraft Java framework for diagnostics, tick profiling,
 compatibility tracking, and carefully validated optimizations.
 
-UMCE is licensed under GPL-3.0-only. The bundled Gson library remains under
-Apache-2.0; see the repository's third-party notices.
+UMCE is licensed under GPL-3.0-only. The CLI uses Gson under Apache-2.0; see
+the repository's third-party notices. The server adapter contains the shared
+API and a small Java 8 runtime module; it does not package the CLI core or Gson.
 
 ## Alpha support
 

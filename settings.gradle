@@ -7,4 +7,4 @@ pluginManagement {
 
 rootProject.name = 'umce'
 
-include 'api', 'core', 'cli', 'platforms:fabric-1.21.1'
+include 'api', 'runtime', 'core', 'cli', 'platforms:fabric-1.21.1'

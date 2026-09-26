@@ -12,10 +12,9 @@ dependencies {
     modImplementation 'net.fabricmc:fabric-loader:0.16.14'
     modImplementation 'net.fabricmc.fabric-api:fabric-api:0.116.17+1.21.1'
 
-    implementation project(':core')
+    implementation project(':runtime')
     include project(':api')
-    include project(':core')
-    include 'com.google.code.gson:gson:2.13.1'
+    include project(':runtime')
 }
 
 java {
@@ -53,10 +52,6 @@ tasks.named('jar') {
 tasks.named('processResources') {
     inputs.property 'version', project.version
     from(rootProject.file('LICENSE'))
-    from(rootProject.file('THIRD-PARTY-NOTICES.md'))
-    from(rootProject.file('third-party/GSON-LICENSE.txt')) {
-        into 'META-INF/licenses'
-    }
     filesMatching('fabric.mod.json') {
         expand 'version': project.version
     }

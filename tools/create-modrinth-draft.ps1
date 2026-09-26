@@ -78,8 +78,24 @@ $projectData = @{
     is_draft = $true
 }
 $projectJson = ConvertTo-Json -InputObject $projectData -Depth 16
-$project = Invoke-RestMethod -Uri "$baseUri/project" -Method Post -Headers $headers `
-    -ContentType 'application/json' -Body $projectJson
+$projectClient = [System.Net.Http.HttpClient]::new()
+$projectClient.DefaultRequestHeaders.Add('Authorization', $Token)
+$projectClient.DefaultRequestHeaders.Add('User-Agent', $userAgent)
+$projectForm = [System.Net.Http.MultipartFormDataContent]::new()
+try {
+    $projectContent = [System.Net.Http.StringContent]::new(
+        $projectJson, [System.Text.Encoding]::UTF8, 'application/json')
+    $projectForm.Add($projectContent, 'data')
+    $projectResponse = $projectClient.PostAsync("$baseUri/project", $projectForm).GetAwaiter().GetResult()
+    $projectResponseText = $projectResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    if (-not $projectResponse.IsSuccessStatusCode) {
+        throw "Project creation failed (HTTP $([int]$projectResponse.StatusCode)): $projectResponseText"
+    }
+    $project = $projectResponseText | ConvertFrom-Json
+} finally {
+    $projectForm.Dispose()
+    $projectClient.Dispose()
+}
 
 try {
     $fabricApi = Invoke-RestMethod -Uri "$baseUri/project/fabric-api" -Headers @{ 'User-Agent' = $userAgent }

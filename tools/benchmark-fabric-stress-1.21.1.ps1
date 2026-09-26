@@ -6,7 +6,8 @@ param(
     [ValidateRange(0, 10000)][int]$Entities = 10000,
     [ValidateRange(0, 500)][int]$Villagers = 500,
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
-    [ValidateRange(1, 10)][int]$Repeats = 1
+    [ValidateRange(1, 10)][int]$Repeats = 1,
+    [switch]$RecordJfr
 )
 
 Set-StrictMode -Version Latest
@@ -172,7 +173,10 @@ function Start-Server([string]$Directory, [string]$Label) {
     Set-Content -LiteralPath $stderrLog -Encoding utf8 -Value ''
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $java
-    $info.Arguments = '-Xms8G -Xmx8G -jar fabric-server-launch.jar nogui'
+    $jfrOption = if ($RecordJfr -and $Label -ne 'stress-world-setup') {
+        ' -XX:StartFlightRecording=settings=profile,dumponexit=true'
+    } else { '' }
+    $info.Arguments = "-Xms8G -Xmx8G$jfrOption -jar fabric-server-launch.jar nogui"
     $info.WorkingDirectory = $Directory
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true

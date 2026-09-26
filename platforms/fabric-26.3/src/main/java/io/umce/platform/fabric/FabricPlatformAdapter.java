@@ -24,7 +24,7 @@ final class FabricPlatformAdapter implements PlatformAdapter {
                 .supportsLoader(LoaderId.FABRIC)
                 .loaderVersion(LoaderId.FABRIC, loaderVersion)
                 .adapterId("fabric-26.3")
-                .optimizationSupport(SupportStatus.PARTIAL)
+                .optimizationSupport(SupportStatus.PLANNED)
                 .testStatus(TestStatus.PASS)
                 .compatibilityStatus(CompatibilityStatus.PARTIAL)
                 .build();

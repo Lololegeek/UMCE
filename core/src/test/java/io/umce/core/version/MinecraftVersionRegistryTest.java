@@ -33,7 +33,7 @@ class MinecraftVersionRegistryTest {
         assertFalse(releases.get(0).getDataVersion().isPresent());
         assertEquals(LoaderId.FABRIC, releases.get(0).getSupportedLoaders().iterator().next());
         assertEquals("0.19.5", releases.get(0).getLoaderVersions().get(LoaderId.FABRIC).iterator().next());
-        assertEquals(SupportStatus.PARTIAL, releases.get(0).getOptimizationSupport());
+        assertEquals(SupportStatus.PLANNED, releases.get(0).getOptimizationSupport());
         assertEquals(TestStatus.PASS, releases.get(0).getTestStatus());
         assertEquals(CompatibilityStatus.UNKNOWN, releases.get(1).getCompatibilityStatus());
         assertEquals(SupportStatus.PLANNED, releases.get(1).getOptimizationSupport());

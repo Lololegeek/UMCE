@@ -41,8 +41,8 @@ and core artifacts target Java 8 bytecode.
 UMCE currently has one runtime adapter: a Fabric server artifact for exactly
 Minecraft 1.21.1. It records tick durations and exposes a permission-gated
 `/umce status` command. No gameplay optimization is enabled. The paired stress
-harness and measurements are in
-[`benchmark-results/2026-09-26-1.21.1-stress-comparison.md`](benchmark-results/2026-09-26-1.21.1-stress-comparison.md).
+harness and latest three-pair measurements are in
+[`benchmark-results/2026-09-26-1.21.1-stress-runtime-split-3pairs-comparison.md`](benchmark-results/2026-09-26-1.21.1-stress-runtime-split-3pairs-comparison.md).
 The harness uses real protocol clients and identical saved worlds. Create is
 not included because its 1.21.1 release targets NeoForge, while this adapter
 targets Fabric. Optimization support and test status are tracked separately

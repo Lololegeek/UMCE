@@ -40,6 +40,7 @@ if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a
 if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
 $artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+$artifactLabel = [System.IO.Path]::GetRelativePath($root, $artifact).Replace('\', '/')
 $node = (Get-Command node.exe -ErrorAction Stop).Source
 $python = (Get-Command python.exe -ErrorAction Stop).Source
 $npm = (Get-Command npm.cmd -ErrorAction Stop).Source
@@ -454,7 +455,7 @@ $lines.Add('# UMCE Minecraft 1.21.1 stress comparison')
 $lines.Add('')
 $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
 $lines.Add('')
-$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifact (SHA-256 $artifactSha256). Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers verified from saved Anvil entity data, 256 filled hoppers with blocked destination chests, 16 paired observer blocks, 8-chunk view/simulation distances, and clients continuously walking into new chunks. A 16 x 16 chunk region is force-loaded and remains active while clients explore beyond it. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
+$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers verified from saved Anvil entity data, 256 filled hoppers with blocked destination chests, 16 paired observer blocks, 8-chunk view/simulation distances, and clients continuously walking into new chunks. A 16 x 16 chunk region is force-loaded and remains active while clients explore beyond it. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
 $lines.Add('')
 $lines.Add('| Condition | Samples | Mean tick ms | Mean P95 ms | Mean P99 ms | Mean process CPU (% of one core) | Mean working set MiB |')
 $lines.Add('|---|---:|---:|---:|---:|---:|---:|')
@@ -483,8 +484,10 @@ for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
     $withMedian = Get-Median ([double[]]@($with | Where-Object { $null -ne $_.tick_mean_ms } | ForEach-Object { $_.tick_mean_ms }))
     $withoutCpu = Get-Median ([double[]]@($without | ForEach-Object { $_.process_cpu_percent_one_core }))
     $withCpu = Get-Median ([double[]]@($with | ForEach-Object { $_.process_cpu_percent_one_core }))
-    $withoutMemory = (Get-Median ([double[]]@($without | ForEach-Object { $_.working_set_bytes })) / 1MB)
-    $withMemory = (Get-Median ([double[]]@($with | ForEach-Object { $_.working_set_bytes })) / 1MB)
+    $withoutMemoryBytes = Get-Median ([double[]]@($without | ForEach-Object { $_.working_set_bytes }))
+    $withMemoryBytes = Get-Median ([double[]]@($with | ForEach-Object { $_.working_set_bytes }))
+    $withoutMemory = $withoutMemoryBytes / 1MB
+    $withMemory = $withMemoryBytes / 1MB
     $firstCondition = if ($repeat % 2 -eq 1) { 'without-umce' } else { 'with-umce' }
     $runMedians[$repeat] = @{ without = $withoutMedian; with = $withMedian }
     $lines.Add("| $repeat | $firstCondition | $($withoutMedian.ToString('F3', $culture)) | $($withMedian.ToString('F3', $culture)) | $($withoutCpu.ToString('F1', $culture)) / $($withCpu.ToString('F1', $culture)) | $($withoutMemory.ToString('F1', $culture)) / $($withMemory.ToString('F1', $culture)) |")
@@ -503,7 +506,8 @@ $lines.Add('')
 $lines.Add("Median paired change in rolling MSPT windows (UMCE vs baseline): $($changeMedian.ToString('F2', $culture))%; sample standard deviation across pairs: $($changeStddev.ToString('F2', $culture)) percentage points; valid pairs: $($pairedPercentChanges.Count)/$Repeats. Positive values are slower with UMCE. This is instrumentation overhead, not an optimization comparison.")
 $lines.Add('')
 $lines.Add("Saved overworld chunk records: $($seedChunkCounts.saved_overworld_chunks) in the seed world, $($withoutChunkCounts.saved_overworld_chunks) after baseline (+$($withoutChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)), and $($withChunkCounts.saved_overworld_chunks) after UMCE (+$($withChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)).")
-$lines.Add("Per-window data is in $csv; only completed /tick query responses are included in the summary. The adjacent run logs show each connected bot, observed online player count, and server overload messages. Entity totals are verified from the generated world files before either test condition starts.")
+$csvRelative = [System.IO.Path]::GetRelativePath($root, $csv).Replace('\', '/')
+$lines.Add("Per-window data is in [$csvRelative]($csvRelative); only completed /tick query responses are included in the summary. The adjacent run logs show each connected bot, observed online player count, and server overload messages. Entity totals are verified from the generated world files before either test condition starts.")
 $lines.Add('')
 $lines.Add("UMCE currently records timings but enables no gameplay optimizations. Conditions alternate order across pairs ($Repeats pair(s)); both start from copies of the same saved seed world. Differences are descriptive measurements of diagnostics overhead, not optimization gains. At least three valid pairs are recommended before interpreting small differences.")
 $lines | Set-Content -LiteralPath $report -Encoding utf8

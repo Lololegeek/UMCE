@@ -9,11 +9,12 @@ An optimization is not enabled just because it is expected to be faster.
 
 ## Project status
 
-UMCE is at its foundation stage. The repository is being built as a modular
-Java project. Runtime support for a Minecraft version, loader, or optimization
-will be reported only after its adapter and behavior have been implemented and
-validated. The long-term target is every stable Java Edition release from 1.6.4
-through 26.3, with future releases added from official version metadata.
+UMCE has a modular Java foundation and one smoke-tested server adapter: Fabric
+for Minecraft 26.3. The adapter reports host details and tick timings; it does
+not enable gameplay optimizations. Runtime support for other versions, loaders,
+or optimizations will be reported only after their implementation and behavior
+have been validated. The long-term target is every stable Java Edition release
+from 1.6.4 through 26.3, with future releases added from official metadata.
 
 ## Principles
 
@@ -27,10 +28,17 @@ through 26.3, with future releases added from official version metadata.
 
 ## Build
 
-Requirements and exact commands will be documented alongside the Gradle
-wrapper and the first executable modules.
+Requires JDK 25 or newer for the Fabric 26.3 build plugin. The shared API/core
+artifacts still target Java 8 bytecode.
+
+## First server adapter
+
+UMCE currently has one runtime adapter: a Fabric server artifact for exactly
+Minecraft 26.3. It reports host details, records tick durations, and provides a
+permission-gated `/umce status` command. No gameplay optimization is enabled.
+Run the real server smoke test with
+[`tools/test-server-26.3-fabric.ps1`](tools/test-server-26.3-fabric.ps1).
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-

@@ -4,20 +4,20 @@ This roadmap describes implementation stages, not current support claims.
 
 ## Foundations
 
-- Modular Gradle build and public API
-- Official Minecraft release metadata registry
-- Platform adapter SPI and capability status model
-- Hardware and JVM diagnostics
-- Conservative compatibility and patch lifecycle
-- Configuration, profiling, benchmark schema, and bounded scheduler
-- CLI for diagnosis, metadata refresh, and controlled benchmarks
+- [x] Modular Gradle build and public API
+- [x] Official Minecraft release metadata registry
+- [x] Platform adapter SPI and capability status model
+- [x] Hardware and JVM diagnostics
+- [x] Conservative compatibility and reversible patch lifecycle
+- [x] Configuration, profiling, benchmark schema, and bounded scheduler
+- [x] CLI for diagnosis, metadata refresh, and controlled benchmarks
 
 ## First platform integration
 
-- Select one server platform and one supported Minecraft version
-- Implement real lifecycle, tick sampling, and diagnostics hooks
-- Package an installable artifact and automate a dedicated-server smoke run
-- Keep the platform and game-version scope explicit
+- [x] Select Fabric server and Minecraft 26.3
+- [x] Implement lifecycle, tick sampling, and diagnostics hooks
+- [x] Package the adapter and automate a dedicated-server smoke run
+- [x] Keep the platform and game-version scope explicit
 
 ## Expansion
 
@@ -29,3 +29,5 @@ This roadmap describes implementation stages, not current support claims.
 - Explore asynchronous and GPU work only when safety and end-to-end benefit are
   demonstrated
 
+No gameplay optimization has been implemented or benchmarked yet. The Fabric
+adapter validates server integration and tick observation only.

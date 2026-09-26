@@ -1,20 +1,24 @@
 # Initial architecture
 
-The repository starts as three Java 8 bytecode modules so the platform-neutral
-API and core can be loaded by a wide range of server runtimes. The build itself
-uses the Gradle wrapper and the installed JDK; a platform adapter may require a
-newer toolchain and will be isolated from these modules.
+The repository uses three Java 8 bytecode modules so the platform-neutral API
+and core can be reused by platform artifacts. The build uses the Gradle wrapper;
+individual adapters select the JDK and bytecode level required by their
+Minecraft release.
 
 - `api`: stable-facing value types and SPIs; no Minecraft implementation
   dependency.
 - `core`: metadata, compatibility, diagnostics, configuration, profiling,
   benchmarking, and scheduling services.
 - `cli`: operator-facing diagnostics and explicit measurement commands.
-- `platforms/*` (future): loader-specific, separately packaged integration
-  artifacts depending on the API and core.
+- `platforms/fabric-26.3`: server-only Fabric adapter for Minecraft 26.3. It
+  records tick durations and exposes a permission-gated diagnostics command.
+  It targets Java 25 and does not alter gameplay behavior.
+- `platforms/*`: future loader-specific adapters, separately packaged and
+  dependent on the API and core.
 
 Minecraft release metadata is inventory, not proof of compatibility. Loader
 and optimization support must come from a verified adapter catalog. Fields
 which Mojang does not publish in its version metadata remain explicitly
-unknown until a trustworthy source is added.
-
+unknown until a trustworthy source is added. The current catalog has one
+verified target, Fabric Loader 0.19.5 on Minecraft 26.3; all other combinations
+remain unknown or planned.

@@ -9,7 +9,8 @@ param(
     [ValidateRange(1, 10)][int]$Repeats = 3,
     [string]$UmceJar = '',
     [string]$ResultTag = '',
-    [switch]$ProfileOnly
+    [switch]$ProfileOnly,
+    [string]$ProfilerJar = ''
 )
 
 Set-StrictMode -Version Latest
@@ -24,7 +25,6 @@ $defaultArtifact = Join-Path $root 'platforms\fabric-1.21.1\build\libs\umce-fabr
 $artifact = if ([string]::IsNullOrWhiteSpace($UmceJar)) { $defaultArtifact } else { (Resolve-Path -LiteralPath $UmceJar).Path }
 $installer = Join-Path $benchmarkRoot 'fabric-installer-1.1.2.jar'
 $java = Join-Path $JavaHome 'bin\java.exe'
-$jcmd = Join-Path $JavaHome 'bin\jcmd.exe'
 $javaToolOptions = $env:JAVA_TOOL_OPTIONS
 if ([string]::IsNullOrWhiteSpace($javaToolOptions)) {
     $javaToolOptions = '--patch-module=java.base=C:\Users\Public\valoria-jdk-patch'
@@ -40,7 +40,6 @@ if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a
 }
 
 if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
-if ($ProfileOnly -and -not (Test-Path -LiteralPath $jcmd)) { throw "Java 21 jcmd not found: $jcmd" }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
 $artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
 $artifactLabel = [System.IO.Path]::GetRelativePath($root, $artifact).Replace('\', '/')
@@ -52,6 +51,28 @@ $apiJar = Get-ChildItem -LiteralPath $apiRoot -Recurse -Filter '*.jar' | Where-O
 if (-not $apiJar) { throw "Fabric API 0.116.17+1.21.1 is not cached: $apiRoot" }
 
 New-Item -ItemType Directory -Force $benchmarkRoot, $runsRoot, $outputRoot | Out-Null
+if ($ProfileOnly) {
+    if (-not [string]::IsNullOrWhiteSpace($ProfilerJar)) {
+        $sparkJar = (Resolve-Path -LiteralPath $ProfilerJar).Path
+    } else {
+        $sparkCache = Join-Path $benchmarkRoot 'spark-fabric-1.21.1.jar'
+        $versions = Invoke-RestMethod -Uri 'https://api.modrinth.com/v2/project/spark/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' -Headers @{'User-Agent'='UMCE/0.1.0 (https://github.com/Lololegeek/UMCE)'}
+        $sparkVersion = $versions | Select-Object -First 1
+        if (-not $sparkVersion -or $sparkVersion.files.Count -lt 1) { throw 'Modrinth returned no Spark release for Fabric 1.21.1.' }
+        $sparkFile = $sparkVersion.files | Where-Object primary | Select-Object -First 1
+        if (-not $sparkFile) { $sparkFile = $sparkVersion.files | Select-Object -First 1 }
+        if (-not $sparkFile.hashes.sha512) { throw 'The selected Spark release has no SHA-512 hash.' }
+        if (-not (Test-Path -LiteralPath $sparkCache) -or
+            (Get-FileHash -LiteralPath $sparkCache -Algorithm SHA512).Hash.ToLowerInvariant() -ne $sparkFile.hashes.sha512.ToLowerInvariant()) {
+            Invoke-WebRequest -Uri $sparkFile.url -OutFile $sparkCache
+        }
+        if ((Get-FileHash -LiteralPath $sparkCache -Algorithm SHA512).Hash.ToLowerInvariant() -ne $sparkFile.hashes.sha512.ToLowerInvariant()) {
+            throw 'Downloaded Spark artifact failed its Modrinth SHA-512 verification.'
+        }
+        $sparkJar = $sparkCache
+        Write-Output "Using Spark $($sparkVersion.version_number) for the isolated profile run."
+    }
+}
 if (-not (Test-Path -LiteralPath (Join-Path $templateRoot 'fabric-server-launch.jar'))) {
     New-Item -ItemType Directory -Force $templateRoot | Out-Null
     if (-not (Test-Path -LiteralPath $installer)) {
@@ -66,6 +87,7 @@ function Write-ServerConfig([string]$Directory) {
     New-Item -ItemType Directory -Force $mods | Out-Null
     Get-ChildItem -LiteralPath $mods -Filter '*.jar' -ErrorAction SilentlyContinue | Remove-Item -Force
     Copy-Item -LiteralPath $apiJar -Destination (Join-Path $mods 'fabric-api.jar') -Force
+    if ($ProfileOnly) { Copy-Item -LiteralPath $sparkJar -Destination (Join-Path $mods 'spark-profiler.jar') -Force }
     Set-Content -LiteralPath (Join-Path $Directory 'eula.txt') -Encoding ascii -Value 'eula=true'
     Set-Content -LiteralPath (Join-Path $Directory 'server.properties') -Encoding ascii -Value @(
         'server-ip=127.0.0.1', "server-port=$port", 'online-mode=false', 'max-players=128',
@@ -306,27 +328,6 @@ function Stop-Server($Server) {
     $Server.Process.Dispose()
 }
 
-function Start-JfrRecording($Server, [string]$RecordingPath) {
-    $quotedPath = 'filename="' + $RecordingPath + '"'
-    $response = & $jcmd $Server.Process.Id JFR.start name=UMCE settings=profile $quotedPath dumponexit=true 2>&1
-    if ($LASTEXITCODE -ne 0 -or ($response -join ' ') -notmatch 'Started recording') {
-        throw "Could not start JFR recording for PID $($Server.Process.Id): $($response -join ' ')"
-    }
-    return ($response -join ' ')
-}
-
-function Stop-JfrRecording($Server, [string]$RecordingPath) {
-    $quotedPath = 'filename="' + $RecordingPath + '"'
-    $response = & $jcmd $Server.Process.Id JFR.stop name=UMCE $quotedPath 2>&1
-    if ($LASTEXITCODE -ne 0 -or ($response -join ' ') -notmatch 'Stopped recording') {
-        throw "Could not stop JFR recording for PID $($Server.Process.Id): $($response -join ' ')"
-    }
-    if (-not (Test-Path -LiteralPath $RecordingPath) -or (Get-Item -LiteralPath $RecordingPath).Length -lt 4096) {
-        throw "JFR recording is missing or unexpectedly small: $RecordingPath"
-    }
-    return ($response -join ' ')
-}
-
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
@@ -367,14 +368,20 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
         while ([DateTimeOffset]::UtcNow -lt $warmupEnd) { Wait-Server $server 500 }
         if ($ProfileOnly) {
-            $recordingPath = Join-Path $outputRoot "$label.jfr"
-            if (Test-Path -LiteralPath $recordingPath) { Remove-Item -LiteralPath $recordingPath -Force }
-            $jfrStart = Start-JfrRecording $server $recordingPath
+            Send-Command $server 'spark profiler start --thread "Server thread" --force-java-sampler'
+            Wait-ForLog $server 'Profiler started|Profiler is now running' 30
             Wait-Server $server $MeasureSeconds
-            $jfrStop = Stop-JfrRecording $server $recordingPath
-            Write-Output "JFR start: $jfrStart"
-            Write-Output "JFR stop: $jfrStop"
-            Write-Output "JFR recording saved: $recordingPath"
+            $profileStart = $server.Lines.Count
+            Send-Command $server 'spark profiler stop --save-to-file'
+            $profileDeadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
+            do {
+                Wait-Server $server 250
+                $profileResponse = ($server.Lines | Select-Object -Skip $profileStart) -join ' '
+            } while ($profileResponse -notmatch '(?i)(saved|written).*(profile|spark)|(?i)(profile|spark).*(saved|written)' -and [DateTimeOffset]::UtcNow -lt $profileDeadline)
+            if ($profileResponse -notmatch '(?i)(saved|written).*(profile|spark)|(?i)(profile|spark).*(saved|written)') {
+                throw "Spark did not confirm a local profile file; inspect $($server.Log)."
+            }
+            Write-Output "Spark profile: $profileResponse"
             return @()
         }
         $samples = [Collections.Generic.List[object]]::new()

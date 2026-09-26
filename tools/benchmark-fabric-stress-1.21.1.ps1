@@ -381,7 +381,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             if ($profileResponse -notmatch '(?i)(saved|written).*(profile|spark)|(?i)(profile|spark).*(saved|written)') {
                 throw "Spark did not confirm a local profile file; inspect $($server.Log)."
             }
-            Write-Output "Spark profile: $profileResponse"
+            Write-Host "Spark profile: $profileResponse"
             return @()
         }
         $samples = [Collections.Generic.List[object]]::new()

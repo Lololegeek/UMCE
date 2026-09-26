@@ -44,6 +44,9 @@ Minecraft 1.21.1. It records tick durations and exposes a permission-gated
 `/umce status` command. No gameplay optimization is enabled. The paired stress
 harness and latest three-pair measurements are in
 [`benchmark-results/2026-09-26-1.21.1-stress-runtime-split-3pairs-comparison.md`](benchmark-results/2026-09-26-1.21.1-stress-runtime-split-3pairs-comparison.md).
+The first local Spark stress profile and its mapped server-thread hot paths are
+summarized in
+[`benchmark-results/2026-09-26-1.21.1-spark-stress-profile.md`](benchmark-results/2026-09-26-1.21.1-spark-stress-profile.md).
 The harness uses real protocol clients and identical saved worlds. Create is
 not included because its 1.21.1 release targets NeoForge, while this adapter
 targets Fabric. Optimization support and test status are tracked separately

@@ -33,8 +33,9 @@ adapter and optimizations are implemented and validated.
 
 ## Build
 
-Requires JDK 21 or newer for the Fabric 1.21.1 build. The shared API, runtime,
-and core artifacts target Java 8 bytecode.
+The Fabric 1.21.1 build needs JDK 25 to run Gradle with Loom 1.18.2, plus JDK
+21 installed for the Minecraft toolchain. The shared API, runtime, and core
+artifacts target Java 8 bytecode.
 
 ## First server adapter
 

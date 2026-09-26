@@ -2,15 +2,17 @@
 
 ## Build
 
-Install JDK 21 and run:
+Install JDK 25 and JDK 21. Gradle and Fabric Loom run on JDK 25; the Fabric
+1.21.1 adapter compiles with the JDK 21 toolchain. Set `JAVA_HOME` to JDK 25,
+then run:
 
 ```powershell
 ./gradlew.bat build
 ```
 
-The shared API and core emit Java 8 bytecode so they can be reused by
-platform-specific artifacts. UMCE's current version ceiling is Minecraft 1.21.1.
-The release catalog reports adapter combinations verified in this repository.
+The shared API, runtime, and core emit Java 8 bytecode. The current Minecraft
+runtime adapter supports exactly 1.21.1; the release catalog lists broader
+version inventory without implying support for unimplemented combinations.
 
 ## Commands
 
@@ -43,7 +45,7 @@ enable an optimization patch.
 Run the paired server stress workload from PowerShell:
 
 ```powershell
-./tools/benchmark-fabric-stress-1.21.1.ps1 -Players 100 -Entities 10000 -Villagers 500 -MeasureSeconds 60 -Repeats 1
+./tools/benchmark-fabric-stress-1.21.1.ps1 -Players 100 -Entities 10000 -Villagers 500 -MeasureSeconds 60 -Repeats 3
 ```
 
 It compares identical saved worlds with and without UMCE, uses Mineflayer TCP

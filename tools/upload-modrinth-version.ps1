@@ -94,10 +94,15 @@ if (@($existingVersions | Where-Object { $_.version_number -eq $Version }).Count
 }
 
 $fabricApi = Invoke-RestMethod -Uri "$baseUri/project/fabric-api" -Headers @{ 'User-Agent' = $userAgent }
+$fullChangelog = Get-Content -LiteralPath (Join-Path $root 'CHANGELOG.md') -Raw
+$changelogMatch = [regex]::Match(
+    $fullChangelog,
+    "(?ms)^##\s+$([regex]::Escape($Version))\s*\r?\n(.*?)(?=^##\s+|\z)")
+if (-not $changelogMatch.Success) { throw "CHANGELOG.md has no section for $Version." }
 $versionData = @{
     name = "UMCE $Version - Fabric 1.21.1"
     version_number = $Version
-    changelog = (Get-Content -LiteralPath (Join-Path $root 'CHANGELOG.md') -Raw)
+    changelog = $changelogMatch.Groups[1].Value.Trim()
     dependencies = @(@{ project_id = $fabricApi.id; dependency_type = 'required' })
     game_versions = @('1.21.1')
     version_type = 'alpha'

@@ -74,6 +74,7 @@ $projectData = @{
     server_side = 'required'
     license_id = 'MIT'
     is_draft = $true
+    initial_versions = @()
 }
 $projectJson = ConvertTo-Json -InputObject $projectData -Depth 16
 $projectClient = [System.Net.Http.HttpClient]::new()

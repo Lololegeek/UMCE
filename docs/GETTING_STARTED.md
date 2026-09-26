@@ -2,23 +2,21 @@
 
 ## Build
 
-Install a JDK 25 or newer and run:
+Install JDK 21 and run:
 
 ```powershell
 ./gradlew.bat build
 ```
 
 The shared API and core emit Java 8 bytecode so they can be reused by
-platform-specific artifacts. The current Fabric 26.3 build plugin itself needs
-a Java 25 Gradle runtime. The bytecode target does not mean that one artifact
-supports all Minecraft runtimes or that an adapter exists for every listed
-version.
+platform-specific artifacts. UMCE's current version ceiling is Minecraft 1.21.1.
+The release catalog reports adapter combinations verified in this repository.
 
 ## Commands
 
 ```powershell
 ./gradlew.bat :cli:run --args="doctor"
-./gradlew.bat :cli:run --args="versions --details 26.3"
+./gradlew.bat :cli:run --args="versions --details 1.21.1"
 ./gradlew.bat :cli:run --args="compat"
 ./gradlew.bat :cli:run --args="benchmark --operations 1000000 --json build/benchmark.json"
 ```
@@ -35,30 +33,21 @@ implemented yet. The benchmark command measures a local integer workload and
 records the raw sample checksums and host details. It is not a Minecraft
 benchmark and does not claim a speedup.
 
-## Minecraft 26.3 Fabric adapter
+## Minecraft 1.21.1 Fabric adapter
 
-The first server artifact targets exactly Minecraft 26.3 with Fabric Loader
-0.19.5 and Fabric API 0.161.0+26.3. It registers a permission-gated
-`/umce status`, `/umce hardware`, `/umce profile`, `/umce compat`, `/umce mods`,
-`/umce memory`, `/umce gpu`, `/umce workers`, and `/umce reload` command set;
-`/umce help` is public. The mods command lists loaded mod IDs and versions,
-while the compatibility command explicitly leaves the mod/patch matrix unknown.
-Memory reports JVM heap use. GPU reports that no backend is installed, and
-workers reports configured limits while the server scheduler is not attached.
-Reload validates and swaps the in-memory configuration snapshot. GPU and
-dashboard settings do not start backends yet. The adapter samples server tick
-durations and does not change Minecraft tick behavior or enable an optimization
-patch.
+The server artifact targets Minecraft 1.21.1 with Fabric Loader 0.16.14 and
+Fabric API 0.116.17+1.21.1. It records server tick durations and exposes a
+permission-gated `/umce status` command. It does not change tick behavior or
+enable an optimization patch.
 
-Run the dedicated smoke scenario from PowerShell with a Java 25 JDK:
+Run the paired server stress workload from PowerShell:
 
 ```powershell
-./tools/test-server-26.3-fabric.ps1 -JavaHome $env:JAVA_HOME
+./tools/benchmark-fabric-stress-1.21.1.ps1 -Players 100 -Entities 10000 -Villagers 500 -MeasureSeconds 60 -Repeats 1
 ```
 
-The script uses a loopback-only, offline-mode server in the ignored
-`platforms/fabric-26.3/build/server-run` directory. It writes the test EULA,
-waits for Fabric and UMCE command registration, queries every registered
-command, edits the isolated test profile and verifies `/umce reload` sees it,
-then sends `stop` and checks that tick samples were recorded. Its log is written
-to `build/test-server-26.3-fabric.log`.
+It compares identical saved worlds with and without UMCE, uses Mineflayer TCP
+clients, and writes a Markdown report plus raw sample CSV under
+`benchmark-results/`. It validates the saved pig and villager counts before
+starting the comparison. Create is omitted because the 1.21.1 release targets
+NeoForge, while this adapter targets Fabric.

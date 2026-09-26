@@ -75,7 +75,7 @@ public final class Umce {
                     + " (" + latest.getReleaseDate().get() + ")");
         }
         System.out.println("1.6.4 indexed: " + contains(releases, "1.6.4"));
-        System.out.println("26.3 indexed: " + contains(releases, "26.3"));
+        System.out.println("1.21.1 target indexed: " + contains(releases, "1.21.1"));
         for (MinecraftRelease release : releases) {
             if (!release.getAdapterId().isPresent()) continue;
             verifiedTargets++;

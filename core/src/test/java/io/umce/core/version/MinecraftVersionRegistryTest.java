@@ -26,13 +26,13 @@ class MinecraftVersionRegistryTest {
         List<MinecraftRelease> releases = registry.refresh();
 
         assertEquals(2, releases.size());
-        assertEquals("26.3", releases.get(0).getId());
+        assertEquals("1.21.1", releases.get(0).getId());
         assertEquals("1.6.4", releases.get(1).getId());
         assertEquals(CompatibilityStatus.PARTIAL, releases.get(0).getCompatibilityStatus());
         assertFalse(releases.get(0).getProtocolVersion().isPresent());
         assertFalse(releases.get(0).getDataVersion().isPresent());
         assertEquals(LoaderId.FABRIC, releases.get(0).getSupportedLoaders().iterator().next());
-        assertEquals("0.19.5", releases.get(0).getLoaderVersions().get(LoaderId.FABRIC).iterator().next());
+        assertEquals("0.16.14", releases.get(0).getLoaderVersions().get(LoaderId.FABRIC).iterator().next());
         assertEquals(SupportStatus.PLANNED, releases.get(0).getOptimizationSupport());
         assertEquals(TestStatus.PASS, releases.get(0).getTestStatus());
         assertEquals(CompatibilityStatus.UNKNOWN, releases.get(1).getCompatibilityStatus());
@@ -47,9 +47,9 @@ class MinecraftVersionRegistryTest {
         MinecraftVersionRegistry registry = new MinecraftVersionRegistry(INDEX, fetcher);
         registry.refresh();
 
-        MinecraftRelease release = registry.getDetails("26.3");
+        MinecraftRelease release = registry.getDetails("1.21.1");
 
-        assertEquals(25, release.getRequiredJavaVersion().getAsInt());
+        assertEquals(21, release.getRequiredJavaVersion().getAsInt());
         assertEquals("https://downloads.example.test/server.jar", release.getServerJar().get().toString());
         assertEquals(CompatibilityStatus.PARTIAL, release.getCompatibilityStatus());
         assertTrue(release.getSupportedLoaders().contains(LoaderId.FABRIC));
@@ -61,7 +61,7 @@ class MinecraftVersionRegistryTest {
         MinecraftVersionRegistry registry = new MinecraftVersionRegistry(INDEX, new FixtureFetcher(), VersionSupportCatalog.empty());
         registry.refresh();
 
-        assertThrows(IllegalArgumentException.class, () -> registry.getDetails("26.4-snapshot-1"));
+        assertThrows(IllegalArgumentException.class, () -> registry.getDetails("1.21.2-snapshot-1"));
     }
 
     private static final class FixtureFetcher implements MetadataFetcher {
@@ -72,12 +72,12 @@ class MinecraftVersionRegistryTest {
             calls++;
             if (INDEX.equals(uri)) {
                 return JsonParser.parseString("{\"versions\":["
-                        + "{\"id\":\"26.3\",\"type\":\"release\",\"url\":\"https://metadata.example.test/26.3.json\",\"releaseTime\":\"2026-09-15T11:23:02Z\"},"
-                        + "{\"id\":\"26.4-snapshot-1\",\"type\":\"snapshot\",\"url\":\"https://metadata.example.test/snapshot.json\",\"releaseTime\":\"2026-09-20T00:00:00Z\"},"
+                        + "{\"id\":\"1.21.1\",\"type\":\"release\",\"url\":\"https://metadata.example.test/1.21.1.json\",\"releaseTime\":\"2024-08-08T12:00:00Z\"},"
+                        + "{\"id\":\"1.21.2-snapshot-1\",\"type\":\"snapshot\",\"url\":\"https://metadata.example.test/snapshot.json\",\"releaseTime\":\"2024-09-20T00:00:00Z\"},"
                         + "{\"id\":\"1.6.4\",\"type\":\"release\",\"url\":\"https://metadata.example.test/1.6.4.json\",\"releaseTime\":\"2013-09-19T15:52:37Z\"}]} ").getAsJsonObject();
             }
-            if (uri.toString().endsWith("26.3.json")) {
-                return JsonParser.parseString("{\"id\":\"26.3\",\"javaVersion\":{\"majorVersion\":25},"
+            if (uri.toString().endsWith("1.21.1.json")) {
+                return JsonParser.parseString("{\"id\":\"1.21.1\",\"javaVersion\":{\"majorVersion\":21},"
                         + "\"downloads\":{\"server\":{\"url\":\"https://downloads.example.test/server.jar\"}}}").getAsJsonObject();
             }
             throw new IOException("Unexpected fixture request: " + uri);

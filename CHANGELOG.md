@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-alpha.2
+
+- Target the server adapter at Minecraft 1.21.1 with Java 21.
+- Add a paired 1.21.1 Fabric stress harness with real protocol clients and a
+  saved, verifiable entity workload.
+- Keep all gameplay optimizations disabled.
+
 ## 0.1.0-alpha.1
 
 - Add a Fabric server adapter for Minecraft 26.3.

@@ -14,7 +14,7 @@ This roadmap describes implementation stages, not current support claims.
 
 ## First platform integration
 
-- [x] Select Fabric server and Minecraft 26.3
+- [x] Select Fabric server and Minecraft 1.21.1
 - [x] Implement lifecycle, tick sampling, and diagnostics hooks
 - [x] Package the adapter and automate a dedicated-server smoke run
 - [x] Keep the platform and game-version scope explicit

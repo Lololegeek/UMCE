@@ -10,9 +10,9 @@ Minecraft release.
 - `core`: metadata, compatibility, diagnostics, configuration, profiling,
   benchmarking, and scheduling services.
 - `cli`: operator-facing diagnostics and explicit measurement commands.
-- `platforms/fabric-26.3`: server-only Fabric adapter for Minecraft 26.3. It
-  records tick durations and exposes a permission-gated diagnostics command.
-  It targets Java 25 and does not alter gameplay behavior.
+- `platforms/fabric-1.21.1`: server-only Fabric adapter for Minecraft 1.21.1.
+  It records tick durations and exposes a permission-gated diagnostics command.
+  It targets Java 21 and does not alter gameplay behavior.
 - `platforms/*`: future loader-specific adapters, separately packaged and
   dependent on the API and core.
 
@@ -20,5 +20,5 @@ Minecraft release metadata is inventory, not proof of compatibility. Loader
 and optimization support must come from a verified adapter catalog. Fields
 which Mojang does not publish in its version metadata remain explicitly
 unknown until a trustworthy source is added. The current catalog has one
-verified target, Fabric Loader 0.19.5 on Minecraft 26.3; all other combinations
-remain unknown or planned.
+verified target, Fabric Loader 0.16.14 on Minecraft 1.21.1; all other
+combinations remain unknown or planned.

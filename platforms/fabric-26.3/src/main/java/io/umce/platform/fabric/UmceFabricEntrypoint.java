@@ -28,6 +28,9 @@ public final class UmceFabricEntrypoint implements ModInitializer {
     private static final TickProfiler TICK_PROFILER = new TickProfiler(3_600);
     private static volatile long tickStartNanos;
     private static volatile PlatformAdapterReference adapterReference;
+    private static volatile HardwareProfile activeHardware;
+    private static volatile ConfigStore activeConfigStore;
+    private static volatile UmceConfig activeConfig;
 
     @Override
     public void onInitialize() {
@@ -46,17 +49,29 @@ public final class UmceFabricEntrypoint implements ModInitializer {
         });
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(Commands.literal("umce")
-                    .then(Commands.literal("status")
-                            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
-                            .executes(context -> sendStatus(context.getSource()))));
-            LOGGER.info("UMCE admin command registered: /umce status");
+                    .then(Commands.literal("help")
+                            .executes(context -> sendHelp(context.getSource())))
+                    .then(adminCommand("status", UmceFabricEntrypoint::sendStatus))
+                    .then(adminCommand("hardware", UmceFabricEntrypoint::sendHardware))
+                    .then(adminCommand("profile", UmceFabricEntrypoint::sendProfile))
+                    .then(adminCommand("compat", UmceFabricEntrypoint::sendCompatibility))
+                    .then(adminCommand("reload", UmceFabricEntrypoint::reloadConfig)));
+            LOGGER.info("UMCE admin commands registered: /umce status, hardware, profile, compat, reload");
         });
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> adminCommand(
+            String name, java.util.function.ToIntFunction<CommandSourceStack> action) {
+        return Commands.literal(name)
+                .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+                .executes(context -> action.applyAsInt(context.getSource()));
     }
 
     private static void onServerStarted(MinecraftServer server, String loaderVersion) {
         FabricPlatformAdapter adapter = new FabricPlatformAdapter(server, loaderVersion);
         adapterReference = new PlatformAdapterReference(adapter);
         HardwareProfile hardware = new HardwareDetector().detect();
+        activeHardware = hardware;
         LOGGER.info("UMCE adapter active: Minecraft {}, Fabric Loader {}", adapter.getMinecraftRelease().getId(), loaderVersion);
         LOGGER.info("UMCE host: {} {}, {} logical processors, max heap {} bytes, GC {}",
                 hardware.getOperatingSystem(), hardware.getArchitecture(), hardware.getLogicalProcessors(),
@@ -65,7 +80,9 @@ public final class UmceFabricEntrypoint implements ModInitializer {
 
         Path configFile = FabricLoader.getInstance().getConfigDir().resolve("umce.properties");
         try {
-            UmceConfig config = new ConfigStore(configFile, hardware.getLogicalProcessors()).loadOrCreate();
+            activeConfigStore = new ConfigStore(configFile, hardware.getLogicalProcessors());
+            UmceConfig config = activeConfigStore.loadOrCreate();
+            activeConfig = config;
             LOGGER.info("UMCE configuration loaded: profile={}, CPU workers={}, GPU={}, dashboard={}",
                     config.getProfile(), config.getCpuWorkers(), config.isGpuEnabled(), config.isDashboardEnabled());
         } catch (IOException exception) {
@@ -81,13 +98,88 @@ public final class UmceFabricEntrypoint implements ModInitializer {
         }
         MinecraftRelease release = current.adapter.getMinecraftRelease();
         ProfileSnapshot profile = TICK_PROFILER.snapshot();
+        UmceConfig config = activeConfig;
         String message = String.format(java.util.Locale.ROOT,
-                "UMCE | MC %s | %s %s | compatibility %s | tick samples %d | mean %.3f ms | p95 %.3f ms | p99 %.3f ms",
+                "UMCE | MC %s | %s %s | profile %s | compatibility %s | tick samples %d | mean %.3f ms | p95 %.3f ms | p99 %.3f ms",
                 release.getId(), current.adapter.getPlatformId(), current.adapter.getLoaderVersion(),
-                release.getCompatibilityStatus(), profile.getSampleCount(), profile.getMeanMilliseconds(),
+                config == null ? "unavailable" : config.getProfile(), release.getCompatibilityStatus(),
+                profile.getSampleCount(), profile.getMeanMilliseconds(),
                 profile.getP95Milliseconds(), profile.getP99Milliseconds());
         source.sendSuccess(() -> Component.literal(message), false);
         return 1;
+    }
+
+    private static int sendHelp(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(
+                "UMCE commands: /umce status, /umce hardware, /umce profile, /umce compat, /umce reload"), false);
+        return 1;
+    }
+
+    private static int sendHardware(CommandSourceStack source) {
+        HardwareProfile hardware = activeHardware;
+        if (hardware == null) {
+            source.sendSuccess(() -> Component.literal("UMCE hardware report is waiting for server startup"), false);
+            return 0;
+        }
+        String memory = hardware.getPhysicalMemoryBytes().isPresent()
+                ? String.format(java.util.Locale.ROOT, "%.1f GiB", hardware.getPhysicalMemoryBytes().getAsLong()
+                        / (1024.0 * 1024.0 * 1024.0)) : "unknown";
+        String message = String.format(java.util.Locale.ROOT,
+                "UMCE hardware | %s %s | CPU %s | logical processors %d | physical memory %s | JVM %s %s | GPU %s",
+                hardware.getOperatingSystem(), hardware.getArchitecture(),
+                hardware.getCpuModelName().orElse("unknown"), hardware.getLogicalProcessors(), memory,
+                hardware.getJvmName(), hardware.getJvmVersion(), hardware.getGpuComputeProbe());
+        source.sendSuccess(() -> Component.literal(message), false);
+        return 1;
+    }
+
+    private static int sendProfile(CommandSourceStack source) {
+        ProfileSnapshot profile = TICK_PROFILER.snapshot();
+        String message = String.format(java.util.Locale.ROOT,
+                "UMCE tick profile | samples %d | mean %.3f ms | p50 %.3f ms | p95 %.3f ms | p99 %.3f ms | max %.3f ms",
+                profile.getSampleCount(), profile.getMeanMilliseconds(), profile.getP50Milliseconds(),
+                profile.getP95Milliseconds(), profile.getP99Milliseconds(), profile.getMaxMilliseconds());
+        source.sendSuccess(() -> Component.literal(message), false);
+        return 1;
+    }
+
+    private static int sendCompatibility(CommandSourceStack source) {
+        PlatformAdapterReference current = adapterReference;
+        if (current == null) {
+            source.sendSuccess(() -> Component.literal("UMCE compatibility UNKNOWN; no server adapter is active"), false);
+            return 0;
+        }
+        MinecraftRelease release = current.adapter.getMinecraftRelease();
+        String message = String.format(java.util.Locale.ROOT,
+                "UMCE compatibility | Minecraft %s | %s %s | %s | optimization patches remain disabled",
+                release.getId(), current.adapter.getPlatformId(), current.adapter.getLoaderVersion(),
+                release.getCompatibilityStatus());
+        source.sendSuccess(() -> Component.literal(message), false);
+        return 1;
+    }
+
+    private static int reloadConfig(CommandSourceStack source) {
+        ConfigStore store = activeConfigStore;
+        if (store == null) {
+            source.sendFailure(Component.literal("UMCE configuration is not available yet"));
+            return 0;
+        }
+        try {
+            UmceConfig reloaded = store.reload();
+            activeConfig = reloaded;
+            source.sendSuccess(() -> Component.literal(String.format(java.util.Locale.ROOT,
+                    "UMCE configuration reloaded | profile %s | CPU workers %d | GPU %s | dashboard %s",
+                    reloaded.getProfile(), reloaded.getCpuWorkers(), reloaded.isGpuEnabled(),
+                    reloaded.isDashboardEnabled())), false);
+            LOGGER.info("UMCE configuration reloaded: profile={}, CPU workers={}, GPU={}, dashboard={}",
+                    reloaded.getProfile(), reloaded.getCpuWorkers(), reloaded.isGpuEnabled(),
+                    reloaded.isDashboardEnabled());
+            return 1;
+        } catch (IOException exception) {
+            source.sendFailure(Component.literal("UMCE configuration reload failed: " + exception.getMessage()));
+            LOGGER.warn("UMCE configuration reload rejected; previous configuration remains active", exception);
+            return 0;
+        }
     }
 
     private static void logFinalProfile() {

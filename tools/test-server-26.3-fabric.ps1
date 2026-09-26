@@ -65,9 +65,19 @@ $processStarted = $false
 $outputWriter = [System.IO.StreamWriter]::new($testOutput, $false, [System.Text.UTF8Encoding]::new($false))
 $script:serverReady = $false
 $script:commandRegistered = $false
-$script:statusReturned = $false
+$script:commandInputs = @('umce help', 'umce status', 'umce hardware', 'umce profile', 'umce compat', 'umce reload')
+$script:commandMarkers = @(
+    'System chat: UMCE commands: /umce status',
+    'System chat: UMCE \| MC 26\.3 \|',
+    'System chat: UMCE hardware \|',
+    'System chat: UMCE tick profile \|',
+    'System chat: UMCE compatibility \|',
+    'System chat: UMCE configuration reloaded \| profile smoke_reloaded \|'
+)
+$script:commandResponses = [bool[]]::new($script:commandInputs.Length)
+$script:nextCommandIndex = 0
 $script:stopSent = $false
-$script:statusSentAt = $null
+$script:allCommandsReturnedAt = $null
 $clock = [System.Diagnostics.Stopwatch]::StartNew()
 
 function Write-ServerLine([string]$Line) {
@@ -78,11 +88,13 @@ function Write-ServerLine([string]$Line) {
     if ($Line -match 'Done \([^)]*\)! For help') {
         $script:serverReady = $true
     }
-    if ($Line -match 'UMCE admin command registered: /umce status') {
+    if ($Line -match 'UMCE admin commands registered: /umce status, hardware, profile, compat, reload') {
         $script:commandRegistered = $true
     }
-    if ($Line -match 'System chat: UMCE \| MC 26\.3 \|') {
-        $script:statusReturned = $true
+    for ($index = 0; $index -lt $script:commandMarkers.Length; $index++) {
+        if ($Line -match $script:commandMarkers[$index]) {
+            $script:commandResponses[$index] = $true
+        }
     }
 }
 
@@ -108,13 +120,38 @@ try {
             }
         }
 
-        if ($script:serverReady -and $script:commandRegistered -and -not $script:statusSentAt) {
-            $process.StandardInput.WriteLine('umce status')
+        if ($script:serverReady -and $script:commandRegistered -and $script:nextCommandIndex -eq 0) {
+            $process.StandardInput.WriteLine($script:commandInputs[$script:nextCommandIndex])
             $process.StandardInput.Flush()
-            $script:statusSentAt = [DateTimeOffset]::UtcNow
+            $script:nextCommandIndex++
         }
-        if ($script:statusReturned -and -not $script:stopSent -and
-                (([DateTimeOffset]::UtcNow - $script:statusSentAt).TotalSeconds -ge 2)) {
+        if ($script:nextCommandIndex -gt 0 -and
+                $script:commandResponses[$script:nextCommandIndex - 1] -and
+                $script:nextCommandIndex -lt $script:commandInputs.Length) {
+            $nextCommand = $script:commandInputs[$script:nextCommandIndex]
+            if ($nextCommand -eq 'umce reload') {
+                $configFile = Join-Path (Join-Path $runDirectory 'config') 'umce.properties'
+                if (-not (Test-Path -LiteralPath $configFile)) {
+                    throw "Expected UMCE configuration file was not created: $configFile"
+                }
+                $configContents = Get-Content -LiteralPath $configFile -Raw
+                if ($configContents -notmatch '(?m)^profile=') {
+                    throw 'The generated UMCE configuration has no profile property.'
+                }
+                $configContents = $configContents -replace '(?m)^profile=.*$', 'profile=smoke_reloaded'
+                Set-Content -LiteralPath $configFile -Encoding ascii -Value $configContents
+            }
+            $process.StandardInput.WriteLine($nextCommand)
+            $process.StandardInput.Flush()
+            $script:nextCommandIndex++
+        }
+        if ($script:nextCommandIndex -eq $script:commandInputs.Length -and
+                $script:commandResponses[$script:commandInputs.Length - 1] -and
+                -not $script:allCommandsReturnedAt) {
+            $script:allCommandsReturnedAt = [DateTimeOffset]::UtcNow
+        }
+        if ($script:allCommandsReturnedAt -and -not $script:stopSent -and
+                (([DateTimeOffset]::UtcNow - $script:allCommandsReturnedAt).TotalSeconds -ge 2)) {
             $process.StandardInput.WriteLine('stop')
             $process.StandardInput.Flush()
             $script:stopSent = $true
@@ -134,7 +171,11 @@ try {
     if ($process.ExitCode -ne 0) { throw "Gradle/server process exited with code $($process.ExitCode). See $testOutput" }
     if (-not $script:serverReady) { throw 'Server readiness marker was not observed.' }
     if (-not $script:commandRegistered) { throw 'UMCE admin command did not register.' }
-    if (-not $script:statusReturned) { throw 'The /umce status command did not return UMCE runtime data.' }
+    for ($index = 0; $index -lt $script:commandResponses.Length; $index++) {
+        if (-not $script:commandResponses[$index]) {
+            throw "The command '$($script:commandInputs[$index])' did not return its expected UMCE response."
+        }
+    }
     if (-not $script:stopSent) { throw 'The test did not send the server stop command.' }
     if (-not (Select-String -LiteralPath $testOutput -Pattern 'UMCE tick profile: samples=[1-9][0-9]*' -Quiet)) {
         throw 'UMCE did not record tick samples before shutdown.'

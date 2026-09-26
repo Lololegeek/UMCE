@@ -4,6 +4,7 @@ import io.umce.api.compat.CompatibilityStatus;
 import io.umce.api.compat.TestStatus;
 import io.umce.api.platform.LoaderId;
 import io.umce.api.version.MinecraftRelease;
+import io.umce.api.version.MinecraftAdapterSupport;
 import io.umce.api.version.SupportStatus;
 
 import java.io.BufferedReader;
@@ -84,8 +85,14 @@ public final class VersionSupportCatalog {
         if (supports.isEmpty()) return;
         AdapterSupport primary = supports.get(0);
         for (AdapterSupport support : supports) {
-            builder.supportsLoader(support.loader)
-                    .loaderVersion(support.loader, support.loaderVersion);
+            MinecraftAdapterSupport.Builder adapter = MinecraftAdapterSupport.builder(support.loader)
+                    .loaderVersion(support.loaderVersion)
+                    .adapterId(support.adapterId)
+                    .optimizationSupport(support.optimizationSupport)
+                    .testStatus(support.testStatus)
+                    .compatibilityStatus(support.compatibilityStatus);
+            if (support.requiredJavaVersion > 0) adapter.requiredJavaVersion(support.requiredJavaVersion);
+            builder.adapterSupport(adapter.build());
         }
         builder.adapterId(primary.adapterId)
                 .optimizationSupport(primary.optimizationSupport)

@@ -29,6 +29,7 @@ public final class MinecraftRelease {
     private final Optional<URL> serverJar;
     private final Set<LoaderId> supportedLoaders;
     private final Map<LoaderId, Set<String>> loaderVersions;
+    private final Map<LoaderId, MinecraftAdapterSupport> adapterSupports;
     private final Optional<String> adapterId;
     private final SupportStatus optimizationSupport;
     private final TestStatus testStatus;
@@ -53,6 +54,7 @@ public final class MinecraftRelease {
                     ? Collections.<String>emptySet() : new java.util.LinkedHashSet<String>(entry.getValue())));
         }
         this.loaderVersions = Collections.unmodifiableMap(versions);
+        this.adapterSupports = Collections.unmodifiableMap(new EnumMap<LoaderId, MinecraftAdapterSupport>(builder.adapterSupports));
         this.adapterId = Optional.ofNullable(builder.adapterId);
         this.optimizationSupport = builder.optimizationSupport;
         this.testStatus = builder.testStatus;
@@ -74,6 +76,10 @@ public final class MinecraftRelease {
     public Optional<URL> getServerJar() { return serverJar; }
     public Set<LoaderId> getSupportedLoaders() { return supportedLoaders; }
     public Map<LoaderId, Set<String>> getLoaderVersions() { return loaderVersions; }
+    public Map<LoaderId, MinecraftAdapterSupport> getAdapterSupports() { return adapterSupports; }
+    public Optional<MinecraftAdapterSupport> getAdapterSupport(LoaderId loader) {
+        return Optional.ofNullable(adapterSupports.get(loader));
+    }
     public Optional<String> getAdapterId() { return adapterId; }
     public SupportStatus getOptimizationSupport() { return optimizationSupport; }
     public TestStatus getTestStatus() { return testStatus; }
@@ -98,6 +104,7 @@ public final class MinecraftRelease {
         private URL serverJar;
         private final Set<LoaderId> supportedLoaders = EnumSet.noneOf(LoaderId.class);
         private final Map<LoaderId, Set<String>> loaderVersions = new EnumMap<LoaderId, Set<String>>(LoaderId.class);
+        private final Map<LoaderId, MinecraftAdapterSupport> adapterSupports = new EnumMap<LoaderId, MinecraftAdapterSupport>(LoaderId.class);
         private String adapterId;
         private SupportStatus optimizationSupport = SupportStatus.PLANNED;
         private TestStatus testStatus = TestStatus.NOT_RUN;
@@ -119,6 +126,15 @@ public final class MinecraftRelease {
             if (versions == null) { versions = new java.util.LinkedHashSet<String>(); loaderVersions.put(loader, versions); }
             versions.add(requireText(value, "loader version"));
             supportedLoaders.add(loader);
+            return this;
+        }
+        public Builder adapterSupport(MinecraftAdapterSupport value) {
+            if (value == null) throw new IllegalArgumentException("adapterSupport must not be null");
+            if (adapterSupports.putIfAbsent(value.getLoader(), value) != null) {
+                throw new IllegalArgumentException("Duplicate adapter support for loader: " + value.getLoader().getId());
+            }
+            supportedLoaders.add(value.getLoader());
+            value.getLoaderVersion().ifPresent(version -> loaderVersion(value.getLoader(), version));
             return this;
         }
         public Builder adapterId(String value) { this.adapterId = requireText(value, "adapterId"); return this; }

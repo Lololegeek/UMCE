@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonNull;
 import com.google.gson.GsonBuilder;
 import io.umce.api.compat.CompatibilityStatus;
+import io.umce.api.version.MinecraftAdapterSupport;
 import io.umce.api.version.MinecraftRelease;
 import io.umce.core.benchmark.BenchmarkResult;
 import io.umce.core.benchmark.BenchmarkRunner;
@@ -75,16 +76,20 @@ public final class Umce {
                     + " (" + latest.getReleaseDate().get() + ")");
         }
         System.out.println("1.6.4 indexed: " + contains(releases, "1.6.4"));
-        System.out.println("1.21.1 target indexed: " + contains(releases, "1.21.1"));
+        System.out.println("1.21.1 indexed: " + contains(releases, "1.21.1"));
         for (MinecraftRelease release : releases) {
-            if (!release.getAdapterId().isPresent()) continue;
-            verifiedTargets++;
-            System.out.println("Verified adapter: Minecraft " + release.getId() + " / "
-                    + formatLoaders(release) + " / " + release.getAdapterId().get()
-                    + " / test " + release.getTestStatus());
+            for (MinecraftAdapterSupport adapter : release.getAdapterSupports().values()) {
+                verifiedTargets++;
+                System.out.println("Adapter: Minecraft " + release.getId() + " / "
+                        + adapter.getLoader().getId() + " " + adapter.getLoaderVersion().orElse("version unknown")
+                        + " / " + adapter.getAdapterId().orElse("adapter id unknown")
+                        + " / optimization " + adapter.getOptimizationSupport()
+                        + " / test " + adapter.getTestStatus()
+                        + " / compatibility " + adapter.getCompatibilityStatus());
+            }
         }
-        System.out.println("Verified adapter targets: " + verifiedTargets
-                + ". Other version/loader combinations remain PLANNED.");
+        System.out.println("Tracked adapter combinations: " + verifiedTargets
+                + ". The official release inventory is broader; unimplemented adapters remain PLANNED.");
 
         if (args.length == 3 && "--details".equals(args[1])) {
             MinecraftRelease details = registry.getDetails(args[2]);
@@ -95,6 +100,12 @@ public final class Umce {
                     ? details.getServerJar().get() : "not listed"));
             System.out.println("Adapter: " + details.getAdapterId().orElse("none verified"));
             System.out.println("Loaders: " + formatLoaders(details));
+            for (MinecraftAdapterSupport adapter : details.getAdapterSupports().values()) {
+                System.out.println("  " + adapter.getLoader().getId() + ": adapter="
+                        + adapter.getAdapterId().orElse("none") + ", optimization="
+                        + adapter.getOptimizationSupport() + ", test=" + adapter.getTestStatus()
+                        + ", compatibility=" + adapter.getCompatibilityStatus());
+            }
             System.out.println("Optimization support: " + details.getOptimizationSupport());
             System.out.println("Compatibility: " + details.getCompatibilityStatus());
             System.out.println("Adapter test: " + details.getTestStatus());

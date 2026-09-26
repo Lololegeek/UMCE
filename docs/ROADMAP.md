@@ -1,6 +1,9 @@
 # UMCE roadmap
 
-This roadmap describes implementation stages, not current support claims.
+This roadmap describes implementation stages, not current support claims. The
+target covers every stable Minecraft Java release from 1.6.4 onward and future
+releases. Runtime support remains explicit per version, loader, and adapter
+generation.
 
 ## Foundations
 
@@ -24,6 +27,8 @@ This roadmap describes implementation stages, not current support claims.
 - Add optimization modules only after representative correctness tests and
   repeatable workload measurements
 - Add loader/version adapters as isolated artifacts
+- Add per-loader adapter metadata and compatibility state without inferring
+  support from another loader's status
 - Grow the stable-version and loader matrix from metadata and verified
   integrations; do not infer support from a version being listed
 - Explore asynchronous and GPU work only when safety and end-to-end benefit are

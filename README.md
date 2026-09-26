@@ -13,11 +13,13 @@ An optimization is not enabled just because it is expected to be faster.
 
 Current release target: **0.1.0-alpha.2**.
 
-The supported Minecraft version ceiling is **1.21.1**. The active server
-adapter targets Fabric on Minecraft 1.21.1 and provides tick diagnostics; it
-does not enable gameplay optimizations. Runtime support for other versions,
-loaders, or optimizations will be reported only after their implementation and
-behavior have been validated.
+The active server adapter currently targets Fabric on Minecraft 1.21.1 and
+provides tick diagnostics; it does not enable gameplay optimizations. UMCE's
+target is every stable Java release from 1.6.4 onward, including future release
+lines, with loader- and generation-specific adapters. The official version
+inventory is refreshed from Mojang metadata; inventory entries do not imply
+runtime support. Each version/loader combination remains planned until its
+adapter and optimizations are implemented and validated.
 
 ## Principles
 
@@ -43,7 +45,9 @@ harness and measurements are in
 [`benchmark-results/2026-09-26-1.21.1-stress-comparison.md`](benchmark-results/2026-09-26-1.21.1-stress-comparison.md).
 The harness uses real protocol clients and identical saved worlds. Create is
 not included because its 1.21.1 release targets NeoForge, while this adapter
-targets Fabric.
+targets Fabric. Optimization support and test status are tracked separately
+for each Minecraft version and loader; the CLI lists the official stable
+release inventory without labeling unimplemented targets as supported.
 
 ## License
 

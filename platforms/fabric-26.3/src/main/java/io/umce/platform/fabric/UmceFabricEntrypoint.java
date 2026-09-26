@@ -55,8 +55,9 @@ public final class UmceFabricEntrypoint implements ModInitializer {
                     .then(adminCommand("hardware", UmceFabricEntrypoint::sendHardware))
                     .then(adminCommand("profile", UmceFabricEntrypoint::sendProfile))
                     .then(adminCommand("compat", UmceFabricEntrypoint::sendCompatibility))
+                    .then(adminCommand("mods", UmceFabricEntrypoint::sendMods))
                     .then(adminCommand("reload", UmceFabricEntrypoint::reloadConfig)));
-            LOGGER.info("UMCE admin commands registered: /umce status, hardware, profile, compat, reload");
+            LOGGER.info("UMCE admin commands registered: /umce status, hardware, profile, compat, mods, reload");
         });
     }
 
@@ -111,7 +112,7 @@ public final class UmceFabricEntrypoint implements ModInitializer {
 
     private static int sendHelp(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal(
-                "UMCE commands: /umce status, /umce hardware, /umce profile, /umce compat, /umce reload"), false);
+                "UMCE commands: /umce status, /umce hardware, /umce profile, /umce compat, /umce mods, /umce reload"), false);
         return 1;
     }
 
@@ -150,11 +151,31 @@ public final class UmceFabricEntrypoint implements ModInitializer {
             return 0;
         }
         MinecraftRelease release = current.adapter.getMinecraftRelease();
+        int loadedMods = FabricLoader.getInstance().getAllMods().size();
         String message = String.format(java.util.Locale.ROOT,
-                "UMCE compatibility | Minecraft %s | %s %s | %s | optimization patches remain disabled",
+                "UMCE compatibility | Minecraft %s | %s %s | adapter %s | loaded mods %d | mod/patch matrix UNKNOWN | optimization patches remain disabled",
                 release.getId(), current.adapter.getPlatformId(), current.adapter.getLoaderVersion(),
-                release.getCompatibilityStatus());
+                release.getCompatibilityStatus(), loadedMods);
         source.sendSuccess(() -> Component.literal(message), false);
+        return 1;
+    }
+
+    private static int sendMods(CommandSourceStack source) {
+        java.util.List<String> modules = new java.util.ArrayList<String>();
+        for (net.fabricmc.loader.api.ModContainer container : FabricLoader.getInstance().getAllMods()) {
+            modules.add(container.getMetadata().getId() + " "
+                    + container.getMetadata().getVersion().getFriendlyString());
+        }
+        java.util.Collections.sort(modules);
+        int displayed = Math.min(12, modules.size());
+        StringBuilder summary = new StringBuilder("UMCE mods | loaded ").append(modules.size()).append(" | ");
+        for (int index = 0; index < displayed; index++) {
+            if (index > 0) summary.append(", ");
+            summary.append(modules.get(index));
+        }
+        if (modules.size() > displayed) summary.append(" | ").append(modules.size() - displayed).append(" omitted");
+        summary.append(" | compatibility entries are not available for these mods");
+        source.sendSuccess(() -> Component.literal(summary.toString()), false);
         return 1;
     }
 

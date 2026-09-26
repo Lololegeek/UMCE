@@ -12,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $moduleRoot = Join-Path $repositoryRoot 'platforms\fabric-26.3'
 $runDirectory = Join-Path $moduleRoot 'build\server-run'
+$configDirectory = Join-Path $runDirectory 'config'
+$configFile = Join-Path $configDirectory 'umce.properties'
 $testOutput = Join-Path $repositoryRoot 'build\test-server-26.3-fabric.log'
 $gradleWrapper = Join-Path $repositoryRoot 'gradlew.bat'
 
@@ -33,8 +35,18 @@ if (-not $GradleUserHome) {
     $GradleUserHome = Join-Path $repositoryRoot 'build\.gradle-user-home'
 }
 
-New-Item -ItemType Directory -Force -Path $runDirectory, (Split-Path -Parent $testOutput), $GradleUserHome | Out-Null
+New-Item -ItemType Directory -Force -Path $runDirectory, $configDirectory,
+    (Split-Path -Parent $testOutput), $GradleUserHome | Out-Null
 Set-Content -LiteralPath (Join-Path $runDirectory 'eula.txt') -Encoding ascii -Value 'eula=true'
+Set-Content -LiteralPath $configFile -Encoding ascii -Value @(
+    'profile=balanced',
+    'cpu.workers=1',
+    'cpu.queueCapacity=32',
+    'gpu.enabled=false',
+    'dashboard.enabled=false',
+    'dashboard.bind=127.0.0.1',
+    'compatibility.safeUnknownMods=true'
+)
 Set-Content -LiteralPath (Join-Path $runDirectory 'server.properties') -Encoding ascii -Value @(
     'server-ip=127.0.0.1',
     'server-port=25577',
@@ -65,13 +77,14 @@ $processStarted = $false
 $outputWriter = [System.IO.StreamWriter]::new($testOutput, $false, [System.Text.UTF8Encoding]::new($false))
 $script:serverReady = $false
 $script:commandRegistered = $false
-$script:commandInputs = @('umce help', 'umce status', 'umce hardware', 'umce profile', 'umce compat', 'umce reload')
+$script:commandInputs = @('umce help', 'umce status', 'umce hardware', 'umce profile', 'umce compat', 'umce mods', 'umce reload')
 $script:commandMarkers = @(
     'System chat: UMCE commands: /umce status',
-    'System chat: UMCE \| MC 26\.3 \|',
+    'System chat: UMCE \| MC 26\.3 \| fabric 0\.19\.5 \| profile balanced \|',
     'System chat: UMCE hardware \|',
     'System chat: UMCE tick profile \|',
     'System chat: UMCE compatibility \|',
+    'System chat: UMCE mods \| loaded [1-9][0-9]* \|',
     'System chat: UMCE configuration reloaded \| profile smoke_reloaded \|'
 )
 $script:commandResponses = [bool[]]::new($script:commandInputs.Length)
@@ -88,7 +101,7 @@ function Write-ServerLine([string]$Line) {
     if ($Line -match 'Done \([^)]*\)! For help') {
         $script:serverReady = $true
     }
-    if ($Line -match 'UMCE admin commands registered: /umce status, hardware, profile, compat, reload') {
+    if ($Line -match 'UMCE admin commands registered: /umce status, hardware, profile, compat, mods, reload') {
         $script:commandRegistered = $true
     }
     for ($index = 0; $index -lt $script:commandMarkers.Length; $index++) {
@@ -130,7 +143,6 @@ try {
                 $script:nextCommandIndex -lt $script:commandInputs.Length) {
             $nextCommand = $script:commandInputs[$script:nextCommandIndex]
             if ($nextCommand -eq 'umce reload') {
-                $configFile = Join-Path (Join-Path $runDirectory 'config') 'umce.properties'
                 if (-not (Test-Path -LiteralPath $configFile)) {
                     throw "Expected UMCE configuration file was not created: $configFile"
                 }

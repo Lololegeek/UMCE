@@ -373,6 +373,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
         while ([DateTimeOffset]::UtcNow -lt $warmupEnd) { Wait-Server $server 500 }
         if ($HeapSnapshotOnly) {
+            Wait-Server $server ($MeasureSeconds * 1000)
             $snapshotPath = Join-Path $outputRoot "$label-heap.txt"
             $before = & $jcmd $server.Process.Id GC.heap_info 2>&1
             if ($LASTEXITCODE -ne 0) { throw "Could not read heap information for $label`: $($before -join ' ')" }

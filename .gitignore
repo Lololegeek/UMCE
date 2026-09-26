@@ -1,0 +1,16 @@
+.gradle/
+build/
+**/build/
+.idea/
+.vscode/
+*.iml
+*.log
+run/
+server-test/
+*.hprof
+*.jfr
+out/
+dist/
+*.class
+*.jar
+

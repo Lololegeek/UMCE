@@ -7,7 +7,6 @@ param(
     [ValidateRange(0, 500)][int]$Villagers = 500,
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
     [ValidateRange(1, 10)][int]$Repeats = 1,
-    [switch]$RecordJfr,
     [string]$ResultTag = ''
 )
 
@@ -22,7 +21,6 @@ $outputRoot = Join-Path $root 'benchmark-results'
 $artifact = Join-Path $root 'platforms\fabric-1.21.1\build\libs\umce-fabric-1.21.1-0.1.0-alpha.2.jar'
 $installer = Join-Path $benchmarkRoot 'fabric-installer-1.1.2.jar'
 $java = Join-Path $JavaHome 'bin\java.exe'
-$jcmd = Join-Path $JavaHome 'bin\jcmd.exe'
 $javaToolOptions = $env:JAVA_TOOL_OPTIONS
 if ([string]::IsNullOrWhiteSpace($javaToolOptions)) {
     $javaToolOptions = '--patch-module=java.base=C:\Users\Public\valoria-jdk-patch'
@@ -178,11 +176,7 @@ function Start-Server([string]$Directory, [string]$Label) {
     Set-Content -LiteralPath $stderrLog -Encoding utf8 -Value ''
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $java
-    $jfrEnabled = $RecordJfr -and $Label -ne 'stress-world-setup'
-    $jfrOption = if ($jfrEnabled) {
-        ' -XX:StartFlightRecording=settings=profile'
-    } else { '' }
-    $info.Arguments = "-Xms8G -Xmx8G$jfrOption -jar fabric-server-launch.jar nogui"
+    $info.Arguments = '-Xms8G -Xmx8G -jar fabric-server-launch.jar nogui'
     $info.WorkingDirectory = $Directory
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -198,7 +192,6 @@ function Start-Server([string]$Directory, [string]$Label) {
     $capture.Start()
     $server = [pscustomobject]@{
         Process = $process; Log = $log; Lines = $capture.Lines; Capture = $capture
-        JfrEnabled = $jfrEnabled
     }
     $ready = $false
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(4)
@@ -300,23 +293,10 @@ function Stop-StressClients($Client) {
 }
 
 function Stop-Server($Server) {
-    $jfrError = $null
-    if ($Server.JfrEnabled) {
-        $jfrPath = Join-Path $Server.Process.StartInfo.WorkingDirectory 'umce-profile.jfr'
-        try {
-            $jfrFilenameArgument = 'filename="{0}"' -f $jfrPath
-            $jfrOutput = & $jcmd $Server.Process.Id JFR.dump $jfrFilenameArgument 'name=1' 2>&1
-            if ($LASTEXITCODE -ne 0) { throw "Could not dump JFR recording for $($Server.Process.Id): $($jfrOutput -join ' ')" }
-            if (-not (Test-Path -LiteralPath $jfrPath) -or (Get-Item -LiteralPath $jfrPath).Length -eq 0) {
-                throw "JFR dump for $($Server.Process.Id) produced no data: $($jfrOutput -join ' ')"
-            }
-        } catch { $jfrError = $_ }
-    }
     try { Send-Command $Server 'stop' } catch { }
     if (-not $Server.Process.WaitForExit(60000)) { $Server.Process.Kill($true) }
     $Server.Process.WaitForExit()
     $Server.Process.Dispose()
-    if ($null -ne $jfrError) { throw $jfrError }
 }
 
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {

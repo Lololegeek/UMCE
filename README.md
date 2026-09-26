@@ -13,14 +13,11 @@ An optimization is not enabled just because it is expected to be faster.
 
 Current release target: **0.1.0-alpha.1**.
 
-UMCE has a modular Java foundation and one smoke-tested server adapter: Fabric
-for Minecraft 26.3. The adapter reports host details and tick timings; it does
-not enable gameplay optimizations. Runtime support for other versions, loaders,
-or optimizations will be reported only after their implementation and behavior
-have been validated. The long-term target is every stable Java Edition release
-from 1.6.4 through 26.3, with future releases added from official metadata.
-See the [reproducible server comparison](benchmark-results/2026-09-26-server-tick-comparison.md)
-and its [benchmark runner](tools/benchmark-fabric-server.ps1).
+The supported Minecraft version ceiling is **1.21.1**. The active server
+adapter targets Fabric on Minecraft 1.21.1 and provides tick diagnostics; it
+does not enable gameplay optimizations. Runtime support for other versions,
+loaders, or optimizations will be reported only after their implementation and
+behavior have been validated.
 
 ## Principles
 
@@ -34,21 +31,17 @@ and its [benchmark runner](tools/benchmark-fabric-server.ps1).
 
 ## Build
 
-Requires JDK 25 or newer for the Fabric 26.3 build plugin. The shared API/core
+Requires JDK 21 or newer for the Fabric 1.21.1 build. The shared API/core
 artifacts still target Java 8 bytecode.
 
 ## First server adapter
 
 UMCE currently has one runtime adapter: a Fabric server artifact for exactly
-Minecraft 26.3. It reports host details, records tick durations, and provides a
-permission-gated `/umce status`, `/umce hardware`, `/umce profile`,
-`/umce compat`, `/umce mods`, `/umce memory`, `/umce gpu`, `/umce workers`,
-and `/umce reload` command set. `/umce help` is available to all operators.
-The mod list is inventory only; it does not claim mod compatibility. The GPU
-backend and server scheduler are not attached yet. No gameplay optimization is
-enabled.
-Run the real server smoke test with
-[`tools/test-server-26.3-fabric.ps1`](tools/test-server-26.3-fabric.ps1).
+Minecraft 1.21.1. It records tick durations and exposes a permission-gated
+`/umce status` command. No gameplay optimization is enabled. A stress
+comparison against a matching Fabric server is being prepared; Create is not
+included because its 1.21.1 release targets NeoForge, while this adapter targets
+Fabric.
 
 ## License
 

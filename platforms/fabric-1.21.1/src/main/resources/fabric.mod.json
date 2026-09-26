@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "umce_fabric_1_21_1",
+  "version": "${version}",
+  "name": "UMCE Fabric Server Adapter",
+  "description": "Server diagnostics and tick profiling adapter for Minecraft 1.21.1.",
+  "environment": "server",
+  "entrypoints": {
+    "main": ["io.umce.platform.fabric.UmceFabricEntrypoint"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.14",
+    "fabric-api": "*",
+    "minecraft": "1.21.1",
+    "java": ">=21"
+  }
+}

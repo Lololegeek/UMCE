@@ -8,7 +8,8 @@ param(
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
     [ValidateRange(1, 10)][int]$Repeats = 3,
     [string]$UmceJar = '',
-    [string]$ResultTag = ''
+    [string]$ResultTag = '',
+    [switch]$ProfileOnly
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +24,7 @@ $defaultArtifact = Join-Path $root 'platforms\fabric-1.21.1\build\libs\umce-fabr
 $artifact = if ([string]::IsNullOrWhiteSpace($UmceJar)) { $defaultArtifact } else { (Resolve-Path -LiteralPath $UmceJar).Path }
 $installer = Join-Path $benchmarkRoot 'fabric-installer-1.1.2.jar'
 $java = Join-Path $JavaHome 'bin\java.exe'
+$jcmd = Join-Path $JavaHome 'bin\jcmd.exe'
 $javaToolOptions = $env:JAVA_TOOL_OPTIONS
 if ([string]::IsNullOrWhiteSpace($javaToolOptions)) {
     $javaToolOptions = '--patch-module=java.base=C:\Users\Public\valoria-jdk-patch'
@@ -38,6 +40,7 @@ if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a
 }
 
 if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
+if ($ProfileOnly -and -not (Test-Path -LiteralPath $jcmd)) { throw "Java 21 jcmd not found: $jcmd" }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
 $artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
 $artifactLabel = [System.IO.Path]::GetRelativePath($root, $artifact).Replace('\', '/')
@@ -303,6 +306,25 @@ function Stop-Server($Server) {
     $Server.Process.Dispose()
 }
 
+function Start-JfrRecording($Server, [string]$RecordingPath) {
+    $response = & $jcmd $Server.Process.Id JFR.start name=UMCE settings=profile "filename=$RecordingPath" dumponexit=true 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($response -join ' ') -notmatch 'Started recording') {
+        throw "Could not start JFR recording for PID $($Server.Process.Id): $($response -join ' ')"
+    }
+    return ($response -join ' ')
+}
+
+function Stop-JfrRecording($Server, [string]$RecordingPath) {
+    $response = & $jcmd $Server.Process.Id JFR.stop name=UMCE "filename=$RecordingPath" 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($response -join ' ') -notmatch 'Stopped recording') {
+        throw "Could not stop JFR recording for PID $($Server.Process.Id): $($response -join ' ')"
+    }
+    if (-not (Test-Path -LiteralPath $RecordingPath) -or (Get-Item -LiteralPath $RecordingPath).Length -lt 4096) {
+        throw "JFR recording is missing or unexpectedly small: $RecordingPath"
+    }
+    return ($response -join ' ')
+}
+
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
@@ -342,6 +364,17 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
 
         $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
         while ([DateTimeOffset]::UtcNow -lt $warmupEnd) { Wait-Server $server 500 }
+        if ($ProfileOnly) {
+            $recordingPath = Join-Path $outputRoot "$label.jfr"
+            if (Test-Path -LiteralPath $recordingPath) { Remove-Item -LiteralPath $recordingPath -Force }
+            $jfrStart = Start-JfrRecording $server $recordingPath
+            Wait-Server $server $MeasureSeconds
+            $jfrStop = Stop-JfrRecording $server $recordingPath
+            Write-Output "JFR start: $jfrStart"
+            Write-Output "JFR stop: $jfrStop"
+            Write-Output "JFR recording saved: $recordingPath"
+            return @()
+        }
         $samples = [Collections.Generic.List[object]]::new()
         $measureEnd = [DateTimeOffset]::UtcNow.AddSeconds($MeasureSeconds)
         $previousCpu = $server.Process.TotalProcessorTime.TotalMilliseconds
@@ -432,12 +465,17 @@ $seedChunkCounts = (& $python (Join-Path $PSScriptRoot 'count-minecraft-chunks.p
 if ($LASTEXITCODE -ne 0) { throw 'Could not count the preloaded overworld chunks.' }
 
 $all = [Collections.Generic.List[object]]::new()
-for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
-    $order = if ($repeat % 2 -eq 1) { @('without-umce', 'with-umce') } else { @('with-umce', 'without-umce') }
-    foreach ($condition in $order) {
-        foreach ($sample in (Measure-Run $condition $repeat $worldPath)) { $all.Add($sample) }
+if ($ProfileOnly) {
+    Measure-Run 'with-umce' 1 $worldPath | Out-Null
+} else {
+    for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
+        $order = if ($repeat % 2 -eq 1) { @('without-umce', 'with-umce') } else { @('with-umce', 'without-umce') }
+        foreach ($condition in $order) {
+            foreach ($sample in (Measure-Run $condition $repeat $worldPath)) { $all.Add($sample) }
+        }
     }
 }
+if ($ProfileOnly) { return }
 $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
 $withoutWorld = Join-Path (Join-Path $runsRoot "without-umce$runTag-r$Repeats") 'world'
 $withWorld = Join-Path (Join-Path $runsRoot "with-umce$runTag-r$Repeats") 'world'

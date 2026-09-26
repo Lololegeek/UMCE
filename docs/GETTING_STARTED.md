@@ -53,3 +53,16 @@ clients, and writes a Markdown report plus raw sample CSV under
 `benchmark-results/`. It validates the saved pig and villager counts before
 starting the comparison. Create is omitted because the 1.21.1 release targets
 NeoForge, while this adapter targets Fabric.
+
+To record a separate 60-second Java Flight Recorder profile of the same UMCE
+workload without mixing it into the paired benchmark measurements, run:
+
+```powershell
+./tools/benchmark-fabric-stress-1.21.1.ps1 -ProfileOnly -ResultTag profiling -Players 100 -Entities 10000 -Villagers 500 -MeasureSeconds 60
+& "$env:JAVA_HOME\bin\jfr.exe" view --width 160 hot-methods .\benchmark-results\with-umce-profiling-r1.jfr
+& "$env:JAVA_HOME\bin\jfr.exe" view allocation-by-class .\benchmark-results\with-umce-profiling-r1.jfr
+```
+
+The recording starts after the 20-second warm-up and runs independently from
+the baseline comparisons. JFR adds sampling overhead, so use it to identify
+candidate hot paths, not as a performance result.

@@ -50,10 +50,6 @@ try {
     $archive.Dispose()
 }
 
-$headers = @{
-    Authorization = $Token
-    'User-Agent' = $userAgent
-}
 $slugUri = "$baseUri/project/$ProjectSlug"
 try {
     $existingProject = Invoke-RestMethod -Uri $slugUri -Headers @{ 'User-Agent' = $userAgent }
@@ -74,6 +70,8 @@ $projectData = @{
     categories = @('fabric', 'optimization', 'technology')
     project_type = 'mod'
     environment = @('server_only')
+    client_side = 'unsupported'
+    server_side = 'required'
     license_id = 'MIT'
     is_draft = $true
 }

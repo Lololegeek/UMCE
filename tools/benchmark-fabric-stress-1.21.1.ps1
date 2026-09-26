@@ -307,7 +307,8 @@ function Stop-Server($Server) {
 }
 
 function Start-JfrRecording($Server, [string]$RecordingPath) {
-    $response = & $jcmd $Server.Process.Id JFR.start name=UMCE settings=profile "filename=$RecordingPath" dumponexit=true 2>&1
+    $quotedPath = 'filename="' + $RecordingPath + '"'
+    $response = & $jcmd $Server.Process.Id JFR.start name=UMCE settings=profile $quotedPath dumponexit=true 2>&1
     if ($LASTEXITCODE -ne 0 -or ($response -join ' ') -notmatch 'Started recording') {
         throw "Could not start JFR recording for PID $($Server.Process.Id): $($response -join ' ')"
     }
@@ -315,7 +316,8 @@ function Start-JfrRecording($Server, [string]$RecordingPath) {
 }
 
 function Stop-JfrRecording($Server, [string]$RecordingPath) {
-    $response = & $jcmd $Server.Process.Id JFR.stop name=UMCE "filename=$RecordingPath" 2>&1
+    $quotedPath = 'filename="' + $RecordingPath + '"'
+    $response = & $jcmd $Server.Process.Id JFR.stop name=UMCE $quotedPath 2>&1
     if ($LASTEXITCODE -ne 0 -or ($response -join ' ') -notmatch 'Stopped recording') {
         throw "Could not stop JFR recording for PID $($Server.Process.Id): $($response -join ' ')"
     }

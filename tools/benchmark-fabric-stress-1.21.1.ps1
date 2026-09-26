@@ -11,7 +11,8 @@ param(
     [string]$ResultTag = '',
     [switch]$ProfileOnly,
     [string]$ProfilerJar = '',
-    [ValidateSet('cpu', 'alloc')][string]$ProfileMode = 'cpu'
+    [switch]$HeapSnapshotOnly,
+    [ValidateSet('baseline', 'umce')][string]$SnapshotCondition = 'baseline'
 )
 
 Set-StrictMode -Version Latest
@@ -26,6 +27,7 @@ $defaultArtifact = Join-Path $root 'platforms\fabric-1.21.1\build\libs\umce-fabr
 $artifact = if ([string]::IsNullOrWhiteSpace($UmceJar)) { $defaultArtifact } else { (Resolve-Path -LiteralPath $UmceJar).Path }
 $installer = Join-Path $benchmarkRoot 'fabric-installer-1.1.2.jar'
 $java = Join-Path $JavaHome 'bin\java.exe'
+$jcmd = Join-Path $JavaHome 'bin\jcmd.exe'
 $javaToolOptions = $env:JAVA_TOOL_OPTIONS
 if ([string]::IsNullOrWhiteSpace($javaToolOptions)) {
     $javaToolOptions = '--patch-module=java.base=C:\Users\Public\valoria-jdk-patch'
@@ -41,6 +43,8 @@ if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a
 }
 
 if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
+if ($HeapSnapshotOnly -and -not (Test-Path -LiteralPath $jcmd)) { throw "Java 21 jcmd not found: $jcmd" }
+if ($ProfileOnly -and $HeapSnapshotOnly) { throw 'Choose either Spark profiling or a heap snapshot.' }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
 $artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
 $artifactLabel = [System.IO.Path]::GetRelativePath($root, $artifact).Replace('\', '/')
@@ -368,12 +372,33 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
 
         $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
         while ([DateTimeOffset]::UtcNow -lt $warmupEnd) { Wait-Server $server 500 }
-        if ($ProfileOnly) {
-            if ($ProfileMode -eq 'alloc') {
-                Send-Command $server 'spark profiler start --alloc --alloc-live-only --interval 524288'
-            } else {
-                Send-Command $server 'spark profiler start --thread * --force-java-sampler'
+        if ($HeapSnapshotOnly) {
+            $snapshotPath = Join-Path $outputRoot "$label-heap.txt"
+            $before = & $jcmd $server.Process.Id GC.heap_info 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "Could not read heap information for $label`: $($before -join ' ')" }
+            $histogram = & $jcmd $server.Process.Id GC.class_histogram 2>&1
+            if ($LASTEXITCODE -ne 0 -or ($histogram -join "`n") -notmatch '#instances') {
+                throw "Could not create a live class histogram for $label`: $($histogram -join ' ')"
             }
+            $after = & $jcmd $server.Process.Id GC.heap_info 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "Could not read post-histogram heap information for $label`: $($after -join ' ')" }
+            $server.Process.Refresh()
+            $snapshotLines = [Collections.Generic.List[string]]::new()
+            $snapshotLines.Add("Condition: $Condition")
+            $snapshotLines.Add("Artifact SHA-256: $artifactSha256")
+            $snapshotLines.Add("Process working set bytes after live histogram: $($server.Process.WorkingSet64)")
+            $snapshotLines.Add('Heap before class histogram:')
+            foreach ($line in $before) { $snapshotLines.Add([string]$line) }
+            $snapshotLines.Add('Heap after class histogram (the command requests a full GC):')
+            foreach ($line in $after) { $snapshotLines.Add([string]$line) }
+            $snapshotLines.Add('Live class histogram:')
+            foreach ($line in $histogram) { $snapshotLines.Add([string]$line) }
+            $snapshotLines | Set-Content -LiteralPath $snapshotPath -Encoding utf8
+            Write-Host "Live heap histogram saved: $snapshotPath"
+            return @()
+        }
+        if ($ProfileOnly) {
+            Send-Command $server 'spark profiler start --thread * --force-java-sampler'
             Wait-ForLog $server 'Profiler started|Profiler is now running' 30
             Wait-Server $server ($MeasureSeconds * 1000)
             $profileStart = $server.Lines.Count
@@ -479,7 +504,9 @@ $seedChunkCounts = (& $python (Join-Path $PSScriptRoot 'count-minecraft-chunks.p
 if ($LASTEXITCODE -ne 0) { throw 'Could not count the preloaded overworld chunks.' }
 
 $all = [Collections.Generic.List[object]]::new()
-if ($ProfileOnly) {
+if ($HeapSnapshotOnly) {
+    Measure-Run $(if ($SnapshotCondition -eq 'umce') { 'with-umce' } else { 'without-umce' }) 1 $worldPath | Out-Null
+} elseif ($ProfileOnly) {
     Measure-Run 'with-umce' 1 $worldPath | Out-Null
 } else {
     for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
@@ -489,7 +516,7 @@ if ($ProfileOnly) {
         }
     }
 }
-if ($ProfileOnly) { return }
+if ($ProfileOnly -or $HeapSnapshotOnly) { return }
 $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
 $withoutWorld = Join-Path (Join-Path $runsRoot "without-umce$runTag-r$Repeats") 'world'
 $withWorld = Join-Path (Join-Path $runsRoot "with-umce$runTag-r$Repeats") 'world'

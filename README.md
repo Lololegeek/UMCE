@@ -19,6 +19,8 @@ not enable gameplay optimizations. Runtime support for other versions, loaders,
 or optimizations will be reported only after their implementation and behavior
 have been validated. The long-term target is every stable Java Edition release
 from 1.6.4 through 26.3, with future releases added from official metadata.
+See the [reproducible server comparison](benchmark-results/2026-09-26-server-tick-comparison.md)
+and its [benchmark runner](tools/benchmark-fabric-server.ps1).
 
 ## Principles
 

@@ -9,6 +9,8 @@ An optimization is not enabled just because it is expected to be faster.
 
 ## Project status
 
+Current release target: **0.1.0-alpha.1**.
+
 UMCE has a modular Java foundation and one smoke-tested server adapter: Fabric
 for Minecraft 26.3. The adapter reports host details and tick timings; it does
 not enable gameplay optimizations. Runtime support for other versions, loaders,

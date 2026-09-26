@@ -368,9 +368,9 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
         while ([DateTimeOffset]::UtcNow -lt $warmupEnd) { Wait-Server $server 500 }
         if ($ProfileOnly) {
-            Send-Command $server 'spark profiler start --thread "Server thread" --force-java-sampler'
+            Send-Command $server 'spark profiler start --thread * --force-java-sampler'
             Wait-ForLog $server 'Profiler started|Profiler is now running' 30
-            Wait-Server $server $MeasureSeconds
+            Wait-Server $server ($MeasureSeconds * 1000)
             $profileStart = $server.Lines.Count
             Send-Command $server 'spark profiler stop --save-to-file'
             $profileDeadline = [DateTimeOffset]::UtcNow.AddSeconds(60)

@@ -11,7 +11,7 @@ An optimization is not enabled just because it is expected to be faster.
 
 ## Project status
 
-Current release target: **0.1.0-alpha.1**.
+Current release target: **0.1.0-alpha.2**.
 
 The supported Minecraft version ceiling is **1.21.1**. The active server
 adapter targets Fabric on Minecraft 1.21.1 and provides tick diagnostics; it
@@ -38,10 +38,12 @@ artifacts still target Java 8 bytecode.
 
 UMCE currently has one runtime adapter: a Fabric server artifact for exactly
 Minecraft 1.21.1. It records tick durations and exposes a permission-gated
-`/umce status` command. No gameplay optimization is enabled. A stress
-comparison against a matching Fabric server is being prepared; Create is not
-included because its 1.21.1 release targets NeoForge, while this adapter targets
-Fabric.
+`/umce status` command. No gameplay optimization is enabled. The paired stress
+harness and measurements are in
+[`benchmark-results/2026-09-26-1.21.1-stress-comparison.md`](benchmark-results/2026-09-26-1.21.1-stress-comparison.md).
+The harness uses real protocol clients and identical saved worlds. Create is
+not included because its 1.21.1 release targets NeoForge, while this adapter
+targets Fabric.
 
 ## License
 

@@ -40,12 +40,15 @@ benchmark and does not claim a speedup.
 The first server artifact targets exactly Minecraft 26.3 with Fabric Loader
 0.19.5 and Fabric API 0.161.0+26.3. It registers a permission-gated
 `/umce status`, `/umce hardware`, `/umce profile`, `/umce compat`, `/umce mods`,
-and `/umce reload` command set; `/umce help` is public. The mods command lists
-loaded mod IDs and versions, while the compatibility command explicitly leaves
-the mod/patch matrix unknown. Reload validates and swaps the in-memory
-configuration snapshot. GPU and dashboard settings do not start backends yet.
-The adapter samples server tick durations and does not change Minecraft tick
-behavior or enable an optimization patch.
+`/umce memory`, `/umce gpu`, `/umce workers`, and `/umce reload` command set;
+`/umce help` is public. The mods command lists loaded mod IDs and versions,
+while the compatibility command explicitly leaves the mod/patch matrix unknown.
+Memory reports JVM heap use. GPU reports that no backend is installed, and
+workers reports configured limits while the server scheduler is not attached.
+Reload validates and swaps the in-memory configuration snapshot. GPU and
+dashboard settings do not start backends yet. The adapter samples server tick
+durations and does not change Minecraft tick behavior or enable an optimization
+patch.
 
 Run the dedicated smoke scenario from PowerShell with a Java 25 JDK:
 

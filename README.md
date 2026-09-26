@@ -35,7 +35,9 @@ artifacts still target Java 8 bytecode.
 
 UMCE currently has one runtime adapter: a Fabric server artifact for exactly
 Minecraft 26.3. It reports host details, records tick durations, and provides a
-permission-gated `/umce status` command. No gameplay optimization is enabled.
+permission-gated `/umce status`, `/umce hardware`, `/umce profile`,
+`/umce compat`, and `/umce reload` command set. `/umce help` is available to
+all operators. No gameplay optimization is enabled.
 Run the real server smoke test with
 [`tools/test-server-26.3-fabric.ps1`](tools/test-server-26.3-fabric.ps1).
 

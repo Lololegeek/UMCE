@@ -39,7 +39,10 @@ benchmark and does not claim a speedup.
 
 The first server artifact targets exactly Minecraft 26.3 with Fabric Loader
 0.19.5 and Fabric API 0.161.0+26.3. It registers a permission-gated
-`/umce status` command and samples server tick durations. It does not change
+`/umce status`, `/umce hardware`, `/umce profile`, `/umce compat`, and
+`/umce reload` command set; `/umce help` is public. Reload validates and swaps
+the in-memory configuration snapshot. GPU and dashboard settings do not start
+backends yet. The adapter samples server tick durations and does not change
 Minecraft tick behavior or enable an optimization patch.
 
 Run the dedicated smoke scenario from PowerShell with a Java 25 JDK:
@@ -50,6 +53,7 @@ Run the dedicated smoke scenario from PowerShell with a Java 25 JDK:
 
 The script uses a loopback-only, offline-mode server in the ignored
 `platforms/fabric-26.3/build/server-run` directory. It writes the test EULA,
-waits for Fabric and the UMCE command, queries `/umce status`, sends `stop`, and
-checks that tick samples were recorded. Its log is written to
-`build/test-server-26.3-fabric.log`.
+waits for Fabric and UMCE command registration, queries every registered
+command, edits the isolated test profile and verifies `/umce reload` sees it,
+then sends `stop` and checks that tick samples were recorded. Its log is written
+to `build/test-server-26.3-fabric.log`.

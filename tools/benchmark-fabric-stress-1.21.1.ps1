@@ -7,6 +7,7 @@ param(
     [ValidateRange(0, 500)][int]$Villagers = 500,
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
     [ValidateRange(1, 10)][int]$Repeats = 3,
+    [string]$UmceJar = '',
     [string]$ResultTag = ''
 )
 
@@ -18,7 +19,8 @@ $templateRoot = Join-Path $benchmarkRoot 'server-template'
 $seedRoot = Join-Path $benchmarkRoot 'seed-world'
 $runsRoot = Join-Path $benchmarkRoot 'runs'
 $outputRoot = Join-Path $root 'benchmark-results'
-$artifact = Join-Path $root 'platforms\fabric-1.21.1\build\libs\umce-fabric-1.21.1-0.1.0-alpha.2.jar'
+$defaultArtifact = Join-Path $root 'platforms\fabric-1.21.1\build\libs\umce-fabric-1.21.1-0.1.0-alpha.2.jar'
+$artifact = if ([string]::IsNullOrWhiteSpace($UmceJar)) { $defaultArtifact } else { (Resolve-Path -LiteralPath $UmceJar).Path }
 $installer = Join-Path $benchmarkRoot 'fabric-installer-1.1.2.jar'
 $java = Join-Path $JavaHome 'bin\java.exe'
 $javaToolOptions = $env:JAVA_TOOL_OPTIONS
@@ -37,6 +39,7 @@ if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a
 
 if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
+$artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
 $node = (Get-Command node.exe -ErrorAction Stop).Source
 $python = (Get-Command python.exe -ErrorAction Stop).Source
 $npm = (Get-Command npm.cmd -ErrorAction Stop).Source
@@ -362,6 +365,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             $wall = [Math]::Max(1.0, ($now - $previousAt).TotalMilliseconds)
             $samples.Add([pscustomobject]@{
                 condition = $Condition; repeat = $Repeat; time_utc = $sampleAt.ToString('o')
+                artifact_sha256 = if ($Condition -eq 'with-umce') { $artifactSha256 } else { $null }
                 players_observed = $observedPlayers; pigs_in_seed_world = $entityCounts.pigs; villagers_in_seed_world = $entityCounts.villagers
                 tick_mean_ms = if ($meanMatch.Success) { [double]::Parse($meanMatch.Groups[1].Value.Replace(',', '.'), $culture) } else { $null }
                 tick_p50_ms = if ($p50Match.Success) { [double]::Parse($p50Match.Groups[1].Value.Replace(',', '.'), $culture) } else { $null }
@@ -448,7 +452,7 @@ $lines.Add('# UMCE Minecraft 1.21.1 stress comparison')
 $lines.Add('')
 $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
 $lines.Add('')
-$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers verified from saved Anvil entity data, 256 filled hoppers with blocked destination chests, 16 paired observer blocks, 8-chunk view/simulation distances, and clients continuously walking into new chunks. A 16 x 16 chunk region is force-loaded and remains active while clients explore beyond it. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
+$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifact (SHA-256 $artifactSha256). Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers verified from saved Anvil entity data, 256 filled hoppers with blocked destination chests, 16 paired observer blocks, 8-chunk view/simulation distances, and clients continuously walking into new chunks. A 16 x 16 chunk region is force-loaded and remains active while clients explore beyond it. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
 $lines.Add('')
 $lines.Add('| Condition | Samples | Mean tick ms | Mean P95 ms | Mean P99 ms | Mean process CPU (% of one core) | Mean working set MiB |')
 $lines.Add('|---|---:|---:|---:|---:|---:|---:|')

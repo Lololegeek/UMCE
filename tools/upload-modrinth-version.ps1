@@ -60,7 +60,7 @@ if ($null -eq $project) {
         slug = $ProjectSlug; title = 'UMCE'; description = $summary; body = $description
         categories = @('optimization', 'technology', 'utility'); project_type = 'mod'
         environment = @('server_only'); client_side = 'unsupported'; server_side = 'required'
-        license_id = 'MIT'; is_draft = $true; initial_versions = @()
+        license_id = 'GPL-3.0-only'; is_draft = $true; initial_versions = @()
     }
     $projectClient = [System.Net.Http.HttpClient]::new()
     $projectClient.DefaultRequestHeaders.Add('Authorization', $Token)
@@ -83,7 +83,7 @@ if ($null -eq $project) {
         $projectClient.Dispose()
     }
 } else {
-    $projectData = @{ description = $summary; body = $description }
+    $projectData = @{ description = $summary; body = $description; license_id = 'GPL-3.0-only' }
     $null = Invoke-RestMethod -Uri $projectUri -Method Patch -Headers $headers `
         -ContentType 'application/json' -Body (ConvertTo-Json -InputObject $projectData -Depth 16)
 }

@@ -52,6 +52,11 @@ tasks.named('jar') {
 
 tasks.named('processResources') {
     inputs.property 'version', project.version
+    from(rootProject.file('LICENSE'))
+    from(rootProject.file('THIRD-PARTY-NOTICES.md'))
+    from(rootProject.file('third-party/GSON-LICENSE.txt')) {
+        into 'META-INF/licenses'
+    }
     filesMatching('fabric.mod.json') {
         expand 'version': project.version
     }

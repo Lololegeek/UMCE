@@ -4,6 +4,7 @@
   "version": "${version}",
   "name": "UMCE Fabric Server Adapter",
   "description": "Server diagnostics and tick profiling adapter for Minecraft 1.21.1.",
+  "license": ["GPL-3.0-only"],
   "environment": "server",
   "entrypoints": {
     "main": ["io.umce.platform.fabric.UmceFabricEntrypoint"]

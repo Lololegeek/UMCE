@@ -3,6 +3,9 @@
 UMCE is a server-first Minecraft Java framework for diagnostics, tick profiling,
 compatibility tracking, and carefully validated optimizations.
 
+UMCE is licensed under GPL-3.0-only. The bundled Gson library remains under
+Apache-2.0; see the repository's third-party notices.
+
 ## Alpha support
 
 This alpha targets Minecraft Java Edition 1.21.1 with Fabric Loader 0.16.14

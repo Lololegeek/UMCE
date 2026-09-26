@@ -51,4 +51,7 @@ release inventory without labeling unimplemented targets as supported.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+UMCE is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE). The Fabric
+artifact also bundles Gson under Apache-2.0; its license is included in
+[`third-party/GSON-LICENSE.txt`](third-party/GSON-LICENSE.txt) and in the
+artifact's `META-INF/licenses` directory.

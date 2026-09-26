@@ -1,3 +1,10 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = 'umce'
 
-include 'api', 'core', 'cli'
+include 'api', 'core', 'cli', 'platforms:fabric-26.3'

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "umce_fabric_26_3",
+  "version": "${version}",
+  "name": "UMCE Fabric Server Adapter",
+  "description": "Server diagnostics and tick profiling adapter for Minecraft 26.3.",
+  "environment": "server",
+  "entrypoints": {
+    "main": ["io.umce.platform.fabric.UmceFabricEntrypoint"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "fabric-api": "*",
+    "minecraft": "26.3",
+    "java": ">=25"
+  }
+}

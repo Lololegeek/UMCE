@@ -303,7 +303,8 @@ function Stop-Server($Server) {
 }
 
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
-    $label = "$Condition-r$Repeat"
+    $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
+    $label = "$Condition$runTag-r$Repeat"
     $directory = Join-Path $runsRoot $label
     if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }
     New-Item -ItemType Directory -Force $directory | Out-Null
@@ -436,8 +437,9 @@ for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
         foreach ($sample in (Measure-Run $condition $repeat $worldPath)) { $all.Add($sample) }
     }
 }
-$withoutWorld = Join-Path (Join-Path $runsRoot "without-umce-r$Repeats") 'world'
-$withWorld = Join-Path (Join-Path $runsRoot "with-umce-r$Repeats") 'world'
+$runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
+$withoutWorld = Join-Path (Join-Path $runsRoot "without-umce$runTag-r$Repeats") 'world'
+$withWorld = Join-Path (Join-Path $runsRoot "with-umce$runTag-r$Repeats") 'world'
 $withoutChunkCounts = (& $python (Join-Path $PSScriptRoot 'count-minecraft-chunks.py') $withoutWorld | ConvertFrom-Json)
 $withChunkCounts = (& $python (Join-Path $PSScriptRoot 'count-minecraft-chunks.py') $withWorld | ConvertFrom-Json)
 if ($LASTEXITCODE -ne 0) { throw 'Could not count saved overworld chunks after the paired runs.' }

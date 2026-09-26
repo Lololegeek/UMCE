@@ -34,8 +34,9 @@ public final class Umce {
                 versions(args);
                 return;
             case "compat":
+                if (args.length != 1) throw new IllegalArgumentException("Usage: umce compat");
                 System.out.println("Compatibility: " + CompatibilityStatus.UNKNOWN);
-                System.out.println("No Minecraft platform adapter is installed in this build.");
+                System.out.println("No Minecraft server is attached to this CLI invocation.");
                 System.out.println("Unknown compatibility keeps optimization patches disabled.");
                 return;
             case "benchmark":
@@ -67,6 +68,7 @@ public final class Umce {
         MinecraftVersionRegistry registry = new MinecraftVersionRegistry();
         java.util.List<MinecraftRelease> releases = registry.refresh();
         System.out.println("Official stable Minecraft Java releases: " + releases.size());
+        int verifiedTargets = 0;
         if (!releases.isEmpty()) {
             MinecraftRelease latest = releases.get(0);
             System.out.println("Newest release in manifest: " + latest.getId()
@@ -74,7 +76,15 @@ public final class Umce {
         }
         System.out.println("1.6.4 indexed: " + contains(releases, "1.6.4"));
         System.out.println("26.3 indexed: " + contains(releases, "26.3"));
-        System.out.println("Registry entries are PLANNED until a matching platform adapter is verified.");
+        for (MinecraftRelease release : releases) {
+            if (!release.getAdapterId().isPresent()) continue;
+            verifiedTargets++;
+            System.out.println("Verified adapter: Minecraft " + release.getId() + " / "
+                    + formatLoaders(release) + " / " + release.getAdapterId().get()
+                    + " / test " + release.getTestStatus());
+        }
+        System.out.println("Verified adapter targets: " + verifiedTargets
+                + ". Other version/loader combinations remain PLANNED.");
 
         if (args.length == 3 && "--details".equals(args[1])) {
             MinecraftRelease details = registry.getDetails(args[2]);
@@ -83,6 +93,11 @@ public final class Umce {
                     ? details.getRequiredJavaVersion().getAsInt() : "not published in this metadata"));
             System.out.println("Server jar: " + (details.getServerJar().isPresent()
                     ? details.getServerJar().get() : "not listed"));
+            System.out.println("Adapter: " + details.getAdapterId().orElse("none verified"));
+            System.out.println("Loaders: " + formatLoaders(details));
+            System.out.println("Optimization support: " + details.getOptimizationSupport());
+            System.out.println("Compatibility: " + details.getCompatibilityStatus());
+            System.out.println("Adapter test: " + details.getTestStatus());
             System.out.println("Protocol version: not published in this metadata");
             System.out.println("Data version: not published in this metadata");
         } else if (args.length == 2 && "--list".equals(args[1])) {
@@ -95,6 +110,16 @@ public final class Umce {
     private static boolean contains(java.util.List<MinecraftRelease> releases, String version) {
         for (MinecraftRelease release : releases) if (version.equals(release.getId())) return true;
         return false;
+    }
+
+    private static String formatLoaders(MinecraftRelease release) {
+        if (release.getSupportedLoaders().isEmpty()) return "none verified";
+        java.util.List<String> values = new java.util.ArrayList<String>();
+        for (io.umce.api.platform.LoaderId loader : release.getSupportedLoaders()) {
+            java.util.Set<String> versions = release.getLoaderVersions().get(loader);
+            values.add(loader.getId() + (versions == null || versions.isEmpty() ? "" : " " + versions));
+        }
+        return String.join(", ", values);
     }
 
     private static void benchmark(String[] args) throws Exception {

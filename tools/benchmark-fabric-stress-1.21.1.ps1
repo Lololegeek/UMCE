@@ -6,7 +6,7 @@ param(
     [ValidateRange(0, 10000)][int]$Entities = 10000,
     [ValidateRange(0, 500)][int]$Villagers = 500,
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
-    [ValidateRange(1, 10)][int]$Repeats = 1,
+    [ValidateRange(1, 10)][int]$Repeats = 3,
     [string]$ResultTag = ''
 )
 
@@ -381,6 +381,22 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     } finally { Stop-StressClients $clients; Stop-Server $server }
 }
 
+function Get-Median([double[]]$Values) {
+    if ($Values.Count -eq 0) { return [double]::NaN }
+    $sorted = @($Values | Sort-Object)
+    $middle = [int][Math]::Floor($sorted.Count / 2)
+    if ($sorted.Count % 2 -eq 1) { return [double]$sorted[$middle] }
+    return ([double]$sorted[$middle - 1] + [double]$sorted[$middle]) / 2.0
+}
+
+function Get-StandardDeviation([double[]]$Values) {
+    if ($Values.Count -lt 2) { return [double]::NaN }
+    $average = ($Values | Measure-Object -Average).Average
+    $sumSquares = 0.0
+    foreach ($value in $Values) { $sumSquares += [Math]::Pow($value - $average, 2) }
+    return [Math]::Sqrt($sumSquares / ($Values.Count - 1))
+}
+
 # Create one immutable world with preloaded chunks, villagers, pigs, hoppers and redstone.
 if (Test-Path -LiteralPath $seedRoot) { Remove-Item -LiteralPath $seedRoot -Recurse -Force }
 New-Item -ItemType Directory -Force $seedRoot | Out-Null
@@ -445,10 +461,44 @@ foreach ($condition in @('without-umce', 'with-umce')) {
     $memory = (($rows | Measure-Object working_set_bytes -Average).Average / 1MB)
     $lines.Add("| $condition | $($rows.Count) | $($mean.ToString('F3', $culture)) | $($p95.ToString('F3', $culture)) | $($p99.ToString('F3', $culture)) | $($cpu.ToString('F1', $culture)) | $($memory.ToString('F1', $culture)) |")
 }
+$runMedians = @{}
+$lines.Add('')
+$lines.Add('## Paired run medians')
+$lines.Add('')
+$lines.Add('Each cell is the median of completed rolling `/tick query` windows from one run. The window values overlap, so they are descriptive and the independent comparison unit is the paired run.')
+$lines.Add('')
+$lines.Add('| Pair | First condition | without-UMCE median MSPT | with-UMCE median MSPT | CPU without / with (% one core) | Working set without / with (MiB) |')
+$lines.Add('|---:|---|---:|---:|---:|---:|')
+for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
+    $pair = @($all | Where-Object { $_.repeat -eq $repeat })
+    $without = @($pair | Where-Object condition -eq 'without-umce')
+    $with = @($pair | Where-Object condition -eq 'with-umce')
+    $withoutMedian = Get-Median ([double[]]@($without | Where-Object { $null -ne $_.tick_mean_ms } | ForEach-Object { $_.tick_mean_ms }))
+    $withMedian = Get-Median ([double[]]@($with | Where-Object { $null -ne $_.tick_mean_ms } | ForEach-Object { $_.tick_mean_ms }))
+    $withoutCpu = Get-Median ([double[]]@($without | ForEach-Object { $_.process_cpu_percent_one_core }))
+    $withCpu = Get-Median ([double[]]@($with | ForEach-Object { $_.process_cpu_percent_one_core }))
+    $withoutMemory = (Get-Median ([double[]]@($without | ForEach-Object { $_.working_set_bytes })) / 1MB)
+    $withMemory = (Get-Median ([double[]]@($with | ForEach-Object { $_.working_set_bytes })) / 1MB)
+    $firstCondition = if ($repeat % 2 -eq 1) { 'without-umce' } else { 'with-umce' }
+    $runMedians[$repeat] = @{ without = $withoutMedian; with = $withMedian }
+    $lines.Add("| $repeat | $firstCondition | $($withoutMedian.ToString('F3', $culture)) | $($withMedian.ToString('F3', $culture)) | $($withoutCpu.ToString('F1', $culture)) / $($withCpu.ToString('F1', $culture)) | $($withoutMemory.ToString('F1', $culture)) / $($withMemory.ToString('F1', $culture)) |")
+}
+$pairedPercentChanges = [Collections.Generic.List[double]]::new()
+for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
+    $baseline = $runMedians[$repeat].without
+    $candidate = $runMedians[$repeat].with
+    if (-not [double]::IsNaN($baseline) -and -not [double]::IsNaN($candidate) -and $baseline -gt 0) {
+        $pairedPercentChanges.Add((($candidate - $baseline) / $baseline) * 100.0)
+    }
+}
+$changeMedian = Get-Median ([double[]]$pairedPercentChanges.ToArray())
+$changeStddev = Get-StandardDeviation ([double[]]$pairedPercentChanges.ToArray())
+$lines.Add('')
+$lines.Add("Median paired change in rolling MSPT windows (UMCE vs baseline): $($changeMedian.ToString('F2', $culture))%; sample standard deviation across pairs: $($changeStddev.ToString('F2', $culture)) percentage points; valid pairs: $($pairedPercentChanges.Count)/$Repeats. Positive values are slower with UMCE. This is instrumentation overhead, not an optimization comparison.")
 $lines.Add('')
 $lines.Add("Saved overworld chunk records: $($seedChunkCounts.saved_overworld_chunks) in the seed world, $($withoutChunkCounts.saved_overworld_chunks) after baseline (+$($withoutChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)), and $($withChunkCounts.saved_overworld_chunks) after UMCE (+$($withChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)).")
 $lines.Add("Per-window data is in $csv; only completed /tick query responses are included in the summary. The adjacent run logs show each connected bot, observed online player count, and server overload messages. Entity totals are verified from the generated world files before either test condition starts.")
 $lines.Add('')
-$lines.Add('UMCE currently records timings but enables no gameplay optimizations. This is one fixed-order paired run without cache resets; differences are descriptive measurements, not optimization gains.')
+$lines.Add("UMCE currently records timings but enables no gameplay optimizations. Conditions alternate order across pairs ($Repeats pair(s)); both start from copies of the same saved seed world. Differences are descriptive measurements of diagnostics overhead, not optimization gains. At least three valid pairs are recommended before interpreting small differences.")
 $lines | Set-Content -LiteralPath $report -Encoding utf8
 Write-Output "Stress comparison saved: $report"

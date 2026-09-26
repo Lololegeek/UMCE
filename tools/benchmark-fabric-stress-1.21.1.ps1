@@ -304,8 +304,12 @@ function Stop-Server($Server) {
     if ($Server.JfrEnabled) {
         $jfrPath = Join-Path $Server.Process.StartInfo.WorkingDirectory 'umce-profile.jfr'
         try {
-            $jfrOutput = & $jcmd $Server.Process.Id JFR.dump "filename=$jfrPath" 'name=1' 2>&1
+            $jfrFilenameArgument = 'filename="{0}"' -f $jfrPath
+            $jfrOutput = & $jcmd $Server.Process.Id JFR.dump $jfrFilenameArgument 'name=1' 2>&1
             if ($LASTEXITCODE -ne 0) { throw "Could not dump JFR recording for $($Server.Process.Id): $($jfrOutput -join ' ')" }
+            if (-not (Test-Path -LiteralPath $jfrPath) -or (Get-Item -LiteralPath $jfrPath).Length -eq 0) {
+                throw "JFR dump for $($Server.Process.Id) produced no data: $($jfrOutput -join ' ')"
+            }
         } catch { $jfrError = $_ }
     }
     try { Send-Command $Server 'stop' } catch { }

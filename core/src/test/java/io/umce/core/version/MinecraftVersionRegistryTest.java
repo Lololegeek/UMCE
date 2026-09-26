@@ -3,7 +3,10 @@ package io.umce.core.version;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.umce.api.compat.CompatibilityStatus;
+import io.umce.api.compat.TestStatus;
+import io.umce.api.platform.LoaderId;
 import io.umce.api.version.MinecraftRelease;
+import io.umce.api.version.SupportStatus;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -16,7 +19,7 @@ class MinecraftVersionRegistryTest {
     private static final URI INDEX = URI.create("https://metadata.example.test/manifest.json");
 
     @Test
-    void registryIndexesAllStableEntriesWithoutInventingSupport() throws Exception {
+    void registryIndexesOfficialStableEntriesAndOnlyCataloguedSupport() throws Exception {
         FixtureFetcher fetcher = new FixtureFetcher();
         MinecraftVersionRegistry registry = new MinecraftVersionRegistry(INDEX, fetcher);
 
@@ -25,10 +28,16 @@ class MinecraftVersionRegistryTest {
         assertEquals(2, releases.size());
         assertEquals("26.3", releases.get(0).getId());
         assertEquals("1.6.4", releases.get(1).getId());
-        assertEquals(CompatibilityStatus.UNKNOWN, releases.get(0).getCompatibilityStatus());
+        assertEquals(CompatibilityStatus.PARTIAL, releases.get(0).getCompatibilityStatus());
         assertFalse(releases.get(0).getProtocolVersion().isPresent());
         assertFalse(releases.get(0).getDataVersion().isPresent());
-        assertTrue(releases.get(0).getSupportedLoaders().isEmpty());
+        assertEquals(LoaderId.FABRIC, releases.get(0).getSupportedLoaders().iterator().next());
+        assertEquals("0.19.5", releases.get(0).getLoaderVersions().get(LoaderId.FABRIC).iterator().next());
+        assertEquals(SupportStatus.PARTIAL, releases.get(0).getOptimizationSupport());
+        assertEquals(TestStatus.PASS, releases.get(0).getTestStatus());
+        assertEquals(CompatibilityStatus.UNKNOWN, releases.get(1).getCompatibilityStatus());
+        assertEquals(SupportStatus.PLANNED, releases.get(1).getOptimizationSupport());
+        assertTrue(releases.get(1).getSupportedLoaders().isEmpty());
         assertEquals(1, fetcher.calls);
     }
 
@@ -42,13 +51,14 @@ class MinecraftVersionRegistryTest {
 
         assertEquals(25, release.getRequiredJavaVersion().getAsInt());
         assertEquals("https://downloads.example.test/server.jar", release.getServerJar().get().toString());
-        assertEquals(CompatibilityStatus.UNKNOWN, release.getCompatibilityStatus());
+        assertEquals(CompatibilityStatus.PARTIAL, release.getCompatibilityStatus());
+        assertTrue(release.getSupportedLoaders().contains(LoaderId.FABRIC));
         assertEquals(2, fetcher.calls);
     }
 
     @Test
     void detailsRejectVersionsOutsideStableIndex() throws Exception {
-        MinecraftVersionRegistry registry = new MinecraftVersionRegistry(INDEX, new FixtureFetcher());
+        MinecraftVersionRegistry registry = new MinecraftVersionRegistry(INDEX, new FixtureFetcher(), VersionSupportCatalog.empty());
         registry.refresh();
 
         assertThrows(IllegalArgumentException.class, () -> registry.getDetails("26.4-snapshot-1"));

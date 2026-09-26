@@ -28,18 +28,25 @@ public final class MinecraftVersionRegistry {
 
     private final URI manifestUri;
     private final MetadataFetcher fetcher;
+    private final VersionSupportCatalog supportCatalog;
     private Map<String, ManifestEntry> entries = Collections.emptyMap();
     private List<MinecraftRelease> releases = Collections.emptyList();
 
     public MinecraftVersionRegistry() {
-        this(OFFICIAL_MANIFEST, new HttpMetadataFetcher());
+        this(OFFICIAL_MANIFEST, new HttpMetadataFetcher(), VersionSupportCatalog.fromClasspath());
     }
 
     public MinecraftVersionRegistry(URI manifestUri, MetadataFetcher fetcher) {
+        this(manifestUri, fetcher, VersionSupportCatalog.fromClasspath());
+    }
+
+    public MinecraftVersionRegistry(URI manifestUri, MetadataFetcher fetcher, VersionSupportCatalog supportCatalog) {
         if (manifestUri == null) throw new IllegalArgumentException("manifestUri must not be null");
         if (fetcher == null) throw new IllegalArgumentException("fetcher must not be null");
+        if (supportCatalog == null) throw new IllegalArgumentException("supportCatalog must not be null");
         this.manifestUri = manifestUri;
         this.fetcher = fetcher;
+        this.supportCatalog = supportCatalog;
     }
 
     /** Refreshes the index and returns every stable release listed by Mojang. */
@@ -59,11 +66,11 @@ public final class MinecraftVersionRegistry {
             ManifestEntry entry = new ManifestEntry(id, type, profileUri, releaseDate);
             if (nextEntries.put(id, entry) != null) throw new IOException("Duplicate Minecraft version id: " + id);
             if ("release".equals(type)) {
-                MinecraftRelease release = MinecraftRelease.builder(id)
+                MinecraftRelease.Builder builder = MinecraftRelease.builder(id)
                         .releaseType(ReleaseType.RELEASE)
-                        .releaseDate(releaseDate)
-                        .build();
-                nextReleases.add(release);
+                        .releaseDate(releaseDate);
+                supportCatalog.applyTo(builder, id);
+                nextReleases.add(builder.build());
             }
         }
 
@@ -109,6 +116,7 @@ public final class MinecraftVersionRegistry {
 
         // Protocol, data version, mappings, and loader matrix are not published
         // in these Mojang fields. Keep them absent until a verified source exists.
+        supportCatalog.applyTo(builder, versionId);
         return builder.build();
     }
 

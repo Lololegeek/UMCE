@@ -7,7 +7,8 @@ param(
     [ValidateRange(0, 500)][int]$Villagers = 500,
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
     [ValidateRange(1, 10)][int]$Repeats = 1,
-    [switch]$RecordJfr
+    [switch]$RecordJfr,
+    [string]$ResultTag = ''
 )
 
 Set-StrictMode -Version Latest
@@ -31,6 +32,9 @@ $entityCounter = Join-Path $PSScriptRoot 'count-minecraft-entities.py'
 $clientDependencyRoot = Join-Path $benchmarkRoot 'client-deps'
 $entitySpawnCount = if ($Entities -gt 0) { $Entities + [Math]::Max(25, [Math]::Ceiling($Entities * 0.01)) } else { 0 }
 $culture = [Globalization.CultureInfo]::InvariantCulture
+if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a-z0-9][a-z0-9_-]{0,39}$') {
+    throw 'ResultTag must contain 1-40 lowercase letters, numbers, underscores, or hyphens.'
+}
 
 if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
@@ -423,8 +427,9 @@ $withChunkCounts = (& $python (Join-Path $PSScriptRoot 'count-minecraft-chunks.p
 if ($LASTEXITCODE -ne 0) { throw 'Could not count saved overworld chunks after the paired runs.' }
 
 $stamp = Get-Date -Format 'yyyy-MM-dd'
-$csv = Join-Path $outputRoot "$stamp-1.21.1-stress-samples.csv"
-$report = Join-Path $outputRoot "$stamp-1.21.1-stress-comparison.md"
+$resultSuffix = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
+$csv = Join-Path $outputRoot "$stamp-1.21.1-stress$resultSuffix-samples.csv"
+$report = Join-Path $outputRoot "$stamp-1.21.1-stress$resultSuffix-comparison.md"
 $all | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding utf8
 $lines = [Collections.Generic.List[string]]::new()
 $lines.Add('# UMCE Minecraft 1.21.1 stress comparison')

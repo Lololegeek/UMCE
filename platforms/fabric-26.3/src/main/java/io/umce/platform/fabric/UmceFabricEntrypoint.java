@@ -56,8 +56,11 @@ public final class UmceFabricEntrypoint implements ModInitializer {
                     .then(adminCommand("profile", UmceFabricEntrypoint::sendProfile))
                     .then(adminCommand("compat", UmceFabricEntrypoint::sendCompatibility))
                     .then(adminCommand("mods", UmceFabricEntrypoint::sendMods))
+                    .then(adminCommand("memory", UmceFabricEntrypoint::sendMemory))
+                    .then(adminCommand("gpu", UmceFabricEntrypoint::sendGpu))
+                    .then(adminCommand("workers", UmceFabricEntrypoint::sendWorkers))
                     .then(adminCommand("reload", UmceFabricEntrypoint::reloadConfig)));
-            LOGGER.info("UMCE admin commands registered: /umce status, hardware, profile, compat, mods, reload");
+            LOGGER.info("UMCE admin commands registered: /umce status, hardware, profile, compat, mods, memory, gpu, workers, reload");
         });
     }
 
@@ -112,7 +115,7 @@ public final class UmceFabricEntrypoint implements ModInitializer {
 
     private static int sendHelp(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal(
-                "UMCE commands: /umce status, /umce hardware, /umce profile, /umce compat, /umce mods, /umce reload"), false);
+                "UMCE commands: /umce status, /umce hardware, /umce profile, /umce compat, /umce mods, /umce memory, /umce gpu, /umce workers, /umce reload"), false);
         return 1;
     }
 
@@ -176,6 +179,51 @@ public final class UmceFabricEntrypoint implements ModInitializer {
         if (modules.size() > displayed) summary.append(" | ").append(modules.size() - displayed).append(" omitted");
         summary.append(" | compatibility entries are not available for these mods");
         source.sendSuccess(() -> Component.literal(summary.toString()), false);
+        return 1;
+    }
+
+    private static int sendMemory(CommandSourceStack source) {
+        Runtime runtime = Runtime.getRuntime();
+        long committed = runtime.totalMemory();
+        long free = runtime.freeMemory();
+        long used = committed - free;
+        HardwareProfile hardware = activeHardware;
+        String physical = hardware != null && hardware.getPhysicalMemoryBytes().isPresent()
+                ? String.format(java.util.Locale.ROOT, "%.1f GiB",
+                        hardware.getPhysicalMemoryBytes().getAsLong() / (1024.0 * 1024.0 * 1024.0))
+                : "unknown";
+        String message = String.format(java.util.Locale.ROOT,
+                "UMCE memory | heap used %.1f MiB | committed %.1f MiB | max %.1f MiB | physical memory %s",
+                used / (1024.0 * 1024.0), committed / (1024.0 * 1024.0),
+                runtime.maxMemory() / (1024.0 * 1024.0), physical);
+        source.sendSuccess(() -> Component.literal(message), false);
+        return 1;
+    }
+
+    private static int sendGpu(CommandSourceStack source) {
+        HardwareProfile hardware = activeHardware;
+        UmceConfig config = activeConfig;
+        if (hardware == null) {
+            source.sendSuccess(() -> Component.literal("UMCE GPU status is waiting for server startup"), false);
+            return 0;
+        }
+        String message = String.format(java.util.Locale.ROOT,
+                "UMCE GPU | compute probe %s | configured %s | backend NOT_INSTALLED | workloads disabled",
+                hardware.getGpuComputeProbe(), config != null && config.isGpuEnabled());
+        source.sendSuccess(() -> Component.literal(message), false);
+        return 1;
+    }
+
+    private static int sendWorkers(CommandSourceStack source) {
+        UmceConfig config = activeConfig;
+        if (config == null) {
+            source.sendSuccess(() -> Component.literal("UMCE worker configuration is waiting for server startup"), false);
+            return 0;
+        }
+        String message = String.format(java.util.Locale.ROOT,
+                "UMCE workers | configured CPU workers %d | queue capacity %d | server scheduler work is not attached yet",
+                config.getCpuWorkers(), config.getCpuQueueCapacity());
+        source.sendSuccess(() -> Component.literal(message), false);
         return 1;
     }
 

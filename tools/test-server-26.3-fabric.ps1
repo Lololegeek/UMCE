@@ -77,7 +77,7 @@ $processStarted = $false
 $outputWriter = [System.IO.StreamWriter]::new($testOutput, $false, [System.Text.UTF8Encoding]::new($false))
 $script:serverReady = $false
 $script:commandRegistered = $false
-$script:commandInputs = @('umce help', 'umce status', 'umce hardware', 'umce profile', 'umce compat', 'umce mods', 'umce reload')
+$script:commandInputs = @('umce help', 'umce status', 'umce hardware', 'umce profile', 'umce compat', 'umce mods', 'umce memory', 'umce gpu', 'umce workers', 'umce reload')
 $script:commandMarkers = @(
     'System chat: UMCE commands: /umce status',
     'System chat: UMCE \| MC 26\.3 \| fabric 0\.19\.5 \| profile balanced \|',
@@ -85,6 +85,9 @@ $script:commandMarkers = @(
     'System chat: UMCE tick profile \|',
     'System chat: UMCE compatibility \|',
     'System chat: UMCE mods \| loaded [1-9][0-9]* \|',
+    'System chat: UMCE memory \| heap used [0-9.]+ MiB',
+    'System chat: UMCE GPU \| compute probe NOT_PROBED \| configured false \| backend NOT_INSTALLED \| workloads disabled',
+    'System chat: UMCE workers \| configured CPU workers 1 \| queue capacity 32 \| server scheduler work is not attached yet',
     'System chat: UMCE configuration reloaded \| profile smoke_reloaded \|'
 )
 $script:commandResponses = [bool[]]::new($script:commandInputs.Length)
@@ -101,7 +104,7 @@ function Write-ServerLine([string]$Line) {
     if ($Line -match 'Done \([^)]*\)! For help') {
         $script:serverReady = $true
     }
-    if ($Line -match 'UMCE admin commands registered: /umce status, hardware, profile, compat, mods, reload') {
+    if ($Line -match 'UMCE admin commands registered: /umce status, hardware, profile, compat, mods, memory, gpu, workers, reload') {
         $script:commandRegistered = $true
     }
     for ($index = 0; $index -lt $script:commandMarkers.Length; $index++) {

@@ -66,3 +66,13 @@ then starts a server-thread profile after the 20-second warm-up. Spark saves the
 profile locally in the isolated run directory; the command does not upload it.
 Sampling adds overhead, so use it to identify candidate hot paths, not as a
 performance result.
+
+To sample allocations that remain live at the end of the same window:
+
+```powershell
+./tools/benchmark-fabric-stress-1.21.1.ps1 -ProfileOnly -ProfileMode alloc -ResultTag allocation -Players 100 -Entities 10000 -Villagers 500 -MeasureSeconds 60
+```
+
+This uses Spark's live allocation sampler at a 512 KiB sampling interval. The
+profile includes sampling overhead and is diagnostic; the paired server
+benchmark remains the source for memory-footprint comparisons.

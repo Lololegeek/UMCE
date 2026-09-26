@@ -10,7 +10,8 @@ param(
     [string]$UmceJar = '',
     [string]$ResultTag = '',
     [switch]$ProfileOnly,
-    [string]$ProfilerJar = ''
+    [string]$ProfilerJar = '',
+    [ValidateSet('cpu', 'alloc')][string]$ProfileMode = 'cpu'
 )
 
 Set-StrictMode -Version Latest
@@ -368,7 +369,11 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
         while ([DateTimeOffset]::UtcNow -lt $warmupEnd) { Wait-Server $server 500 }
         if ($ProfileOnly) {
-            Send-Command $server 'spark profiler start --thread * --force-java-sampler'
+            if ($ProfileMode -eq 'alloc') {
+                Send-Command $server 'spark profiler start --alloc --alloc-live-only --interval 524288'
+            } else {
+                Send-Command $server 'spark profiler start --thread * --force-java-sampler'
+            }
             Wait-ForLog $server 'Profiler started|Profiler is now running' 30
             Wait-Server $server ($MeasureSeconds * 1000)
             $profileStart = $server.Lines.Count

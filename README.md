@@ -1,5 +1,7 @@
 # UMCE
 
+<p align="center"><img src="assets/umce-icon.jpg" alt="UMCE logo" width="220"></p>
+
 **Universal Minecraft Compute & Optimization Engine** is an open-source,
 server-first project for measuring Minecraft server workloads and developing
 safe, reversible optimizations across Minecraft generations and platforms.

@@ -77,3 +77,16 @@ For a snapshot with UMCE, pass `-SnapshotCondition umce`. The live class
 histogram requests a full GC and can pause the server, so this separate run is
 diagnostic and must not be used as a tick-performance measurement. Results are
 written under `benchmark-results/`.
+
+The stress harness defaults to `-Xms8G -Xmx8G` to keep existing comparisons
+consistent. To check whether the same workload fits in a smaller Java heap,
+set both heap sizes explicitly, for example `-InitialHeap 1G -MaximumHeap 4G`.
+This changes JVM memory limits for the test server; it does not represent a
+memory optimization performed by UMCE.
+
+On 2026-09-26, the 100-client, 10,000-entity, 500-villager workload completed
+both without UMCE and with UMCE using `-Xms1G -Xmx4G`. Post-histogram process
+working sets were 1,539 MiB and 1,527 MiB; live heap histograms were 401 MiB
+and 484 MiB. These are single, variable-world snapshots, not a controlled
+memory win for UMCE. The server heap reported under 1 GiB after GC in both
+runs. See `benchmark-results/2026-09-26-memory-4g.md` for details.

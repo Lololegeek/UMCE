@@ -9,6 +9,7 @@ run/
 server-test/
 *.hprof
 *.jfr
+benchmark-results/*-heap.txt
 out/
 dist/
 *.class

@@ -7,6 +7,8 @@ param(
     [ValidateRange(0, 500)][int]$Villagers = 500,
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
     [ValidateRange(1, 10)][int]$Repeats = 3,
+    [ValidatePattern('^[1-9][0-9]*[kKmMgGtT]$')][string]$InitialHeap = '8G',
+    [ValidatePattern('^[1-9][0-9]*[kKmMgGtT]$')][string]$MaximumHeap = '8G',
     [string]$UmceJar = '',
     [string]$ResultTag = '',
     [switch]$ProfileOnly,
@@ -210,7 +212,7 @@ function Start-Server([string]$Directory, [string]$Label) {
     Set-Content -LiteralPath $stderrLog -Encoding utf8 -Value ''
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $java
-    $info.Arguments = '-Xms8G -Xmx8G -jar fabric-server-launch.jar nogui'
+    $info.Arguments = "-Xms$InitialHeap -Xmx$MaximumHeap -jar fabric-server-launch.jar nogui"
     $info.WorkingDirectory = $Directory
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -387,6 +389,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             $snapshotLines = [Collections.Generic.List[string]]::new()
             $snapshotLines.Add("Condition: $Condition")
             $snapshotLines.Add("Artifact SHA-256: $artifactSha256")
+            $snapshotLines.Add("Java heap flags: -Xms$InitialHeap -Xmx$MaximumHeap")
             $snapshotLines.Add("Process working set bytes after live histogram: $($server.Process.WorkingSet64)")
             $snapshotLines.Add('Heap before class histogram:')
             foreach ($line in $before) { $snapshotLines.Add([string]$line) }

@@ -29,7 +29,7 @@ final class HttpMetadataFetcher implements MetadataFetcher {
             }
             try (Reader reader = new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8)) {
                 try {
-                    return new JsonParser().parse(reader).getAsJsonObject();
+                    return JsonParser.parseReader(reader).getAsJsonObject();
                 } catch (JsonParseException | IllegalStateException exception) {
                     throw new IOException("Invalid JSON metadata from " + uri, exception);
                 }

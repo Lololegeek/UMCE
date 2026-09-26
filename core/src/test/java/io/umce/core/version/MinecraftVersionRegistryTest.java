@@ -61,13 +61,13 @@ class MinecraftVersionRegistryTest {
         public JsonObject fetch(URI uri) throws IOException {
             calls++;
             if (INDEX.equals(uri)) {
-                return new JsonParser().parse("{\"versions\":["
+                return JsonParser.parseString("{\"versions\":["
                         + "{\"id\":\"26.3\",\"type\":\"release\",\"url\":\"https://metadata.example.test/26.3.json\",\"releaseTime\":\"2026-09-15T11:23:02Z\"},"
                         + "{\"id\":\"26.4-snapshot-1\",\"type\":\"snapshot\",\"url\":\"https://metadata.example.test/snapshot.json\",\"releaseTime\":\"2026-09-20T00:00:00Z\"},"
                         + "{\"id\":\"1.6.4\",\"type\":\"release\",\"url\":\"https://metadata.example.test/1.6.4.json\",\"releaseTime\":\"2013-09-19T15:52:37Z\"}]} ").getAsJsonObject();
             }
             if (uri.toString().endsWith("26.3.json")) {
-                return new JsonParser().parse("{\"id\":\"26.3\",\"javaVersion\":{\"majorVersion\":25},"
+                return JsonParser.parseString("{\"id\":\"26.3\",\"javaVersion\":{\"majorVersion\":25},"
                         + "\"downloads\":{\"server\":{\"url\":\"https://downloads.example.test/server.jar\"}}}").getAsJsonObject();
             }
             throw new IOException("Unexpected fixture request: " + uri);

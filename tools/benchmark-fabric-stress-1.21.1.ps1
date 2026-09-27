@@ -20,6 +20,7 @@ param(
     [switch]$EnableTickProfiler,
     [switch]$PatchComparison,
     [switch]$ProfileOnly,
+    [switch]$ProfilePatchEnabled,
     [string]$ProfilerJar = '',
     [switch]$HeapSnapshotOnly,
     [ValidateSet('baseline', 'umce')][string]$SnapshotCondition = 'baseline'
@@ -56,6 +57,7 @@ if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
 if ($HeapSnapshotOnly -and -not (Test-Path -LiteralPath $jcmd)) { throw "Java 21 jcmd not found: $jcmd" }
 if ($ProfileOnly -and $HeapSnapshotOnly) { throw 'Choose either Spark profiling or a heap snapshot.' }
 if ($PatchComparison -and ($ProfileOnly -or $HeapSnapshotOnly)) { throw 'PatchComparison cannot be combined with Spark or heap snapshot mode.' }
+if ($ProfilePatchEnabled -and -not $ProfileOnly) { throw 'ProfilePatchEnabled requires ProfileOnly.' }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
 $artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
 $artifactLabel = [System.IO.Path]::GetRelativePath($root, $artifact).Replace('\', '/')
@@ -358,7 +360,7 @@ function Stop-Server($Server) {
 
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $usesUmce = $Condition -ne 'without-umce'
-    $enableSmallBoxSectionProbe = $Condition -eq 'patch-enabled'
+    $enableSmallBoxSectionProbe = $Condition -eq 'patch-enabled' -or ($ProfileOnly -and $ProfilePatchEnabled)
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
     $directory = Join-Path $runsRoot $label
@@ -555,7 +557,7 @@ $all = [Collections.Generic.List[object]]::new()
 if ($HeapSnapshotOnly) {
     Measure-Run $(if ($SnapshotCondition -eq 'umce') { 'with-umce' } else { 'without-umce' }) 1 $worldPath | Out-Null
 } elseif ($ProfileOnly) {
-    Measure-Run 'with-umce' 1 $worldPath | Out-Null
+    Measure-Run $(if ($ProfilePatchEnabled) { 'patch-enabled' } else { 'with-umce' }) 1 $worldPath | Out-Null
 } elseif ($PatchComparison) {
     for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
         switch (($repeat - 1) % 4) {
@@ -579,14 +581,14 @@ if ($HeapSnapshotOnly) {
 if ($ProfileOnly -or $HeapSnapshotOnly) { return }
 $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
 if ($PatchComparison) {
-    $csv = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation$runTag-samples.csv"
-    $report = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation$runTag-comparison.md"
+    $csv = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation-entity-section-probe$runTag-samples.csv"
+    $report = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation-entity-section-probe$runTag-comparison.md"
     $all | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding utf8
     $lines = [Collections.Generic.List[string]]::new()
     $lines.Add('# UMCE Fabric 1.21.1 patch ablation')
     $lines.Add('')
     $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
-    $lines.Add("Patch: `small-box-section-probe`; baseline has no UMCE, diagnostics-only loads UMCE in SAFE mode, and patch-enabled uses OPTIMIZED mode with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup 20 s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
+    $lines.Add("Patch: ``small-box-section-probe``; baseline has no UMCE, diagnostics-only loads UMCE in SAFE mode, and patch-enabled uses OPTIMIZED mode with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup 20 s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
     $lines.Add("UMCE artifact SHA-256: $artifactSha256")
     $lines.Add('')
     $lines.Add('| Condition | Windows | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | CPU (% one core) | Working set MiB |')
@@ -638,13 +640,14 @@ if ($PatchComparison) {
     $patchMedian = Get-Median ([double[]]$patchChanges.ToArray())
     $patchSd = Get-StandardDeviation ([double[]]$patchChanges.ToArray())
     $patchVsBaselineMedian = Get-Median ([double[]]$patchVsBaselineChanges.ToArray())
+    $patchFasterCycles = @($patchChanges | Where-Object { $_ -lt 0 }).Count
     $lines.Add('')
     $lines.Add("Median diagnostics-only change vs baseline: $($diagnosticsMedian.ToString('F2', $culture))% (SD $($diagnosticsSd.ToString('F2', $culture)) pp). Median patch change vs diagnostics-only: $($patchMedian.ToString('F2', $culture))% (SD $($patchSd.ToString('F2', $culture)) pp). Patch vs baseline: $($patchVsBaselineMedian.ToString('F2', $culture))%. Positive deltas are slower. Valid paired cycles: $($patchChanges.Count)/$Repeats.")
     $lines.Add('')
     $csvRelative = [System.IO.Path]::GetRelativePath($root, $csv).Replace('\\', '/')
     $lines.Add("Raw rolling MSPT/P95/P99, process CPU, working set and run metadata: [$csvRelative]($csvRelative).")
     $lines.Add('')
-    $lines.Add('Interpretation: keep the patch opt-in for this entity-heavy workload because all four paired MSPT deltas are negative and RAM is stable. CPU was higher in the patch condition, allocation rate was unavailable, and only one workload was measured; do not enable by default or generalize this result to other workloads.')
+    $lines.Add("Interpretation: patch MSPT was lower in $patchFasterCycles/$($patchChanges.Count) paired cycles. Interpret alongside the variance and CPU/RAM columns; do not generalize this result to other workloads.")
     $lines | Set-Content -LiteralPath $report -Encoding utf8
     Write-Output "Patch ablation saved: $report"
     return

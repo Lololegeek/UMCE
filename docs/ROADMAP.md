@@ -21,6 +21,7 @@ generation.
 - [x] Implement lifecycle, tick sampling, and diagnostics hooks
 - [x] Package the adapter and automate a dedicated-server smoke run
 - [x] Keep the platform and game-version scope explicit
+- [x] Add an opt-in entity-section probe patch for Fabric 1.21.1, measured on a 10k-entity workload
 
 ## Expansion
 
@@ -34,5 +35,9 @@ generation.
 - Explore asynchronous and GPU work only when safety and end-to-end benefit are
   demonstrated
 
-No gameplay optimization has been implemented or benchmarked yet. The Fabric
-adapter validates server integration and tick observation only.
+The Fabric adapter currently registers one opt-in gameplay patch, scoped to
+Minecraft 1.21.1. The empty-passenger entity-tracking fast path was profiled
+and then removed after it regressed all four test pairs. The CPU scheduler exists in
+the platform-neutral core but is not wired to Fabric gameplay tasks. GPU
+compute remains unprobed and unused; no safe vanilla workload has yet shown an
+end-to-end GPU benefit.

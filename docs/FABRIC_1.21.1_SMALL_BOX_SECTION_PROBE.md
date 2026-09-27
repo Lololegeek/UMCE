@@ -26,6 +26,8 @@ The four-cycle comparison uses the same saved 10k-pig world, no clients or villa
 
 Against diagnostics-only, patch-enabled median rolling MSPT was faster in all four pairs (−6.90%, −2.98%, −4.21%, −2.77%; median −3.60%). Mean P95 and P99 were also lower in aggregate. Working set was effectively unchanged (1331.5 MiB vs 1334.0 MiB). Process CPU averaged 116.1% of one core with the patch vs 113.2% diagnostics-only; treat this as a measured increase, not a CPU reduction. This is one isolated entity-heavy workload, not evidence for all server workloads.
 
+A separate 4-cycle run with 50 moving clients and 10,062 pigs showed a median MSPT change of −3.71% versus diagnostics-only, but the patch was faster in only 3/4 pairs; one pair was 21.71% slower and paired variation was high. P95/P99, CPU, and working set were lower in aggregate in this run, but that does not remove the per-pair uncertainty. See the [multiclient report](../benchmark-results/2026-09-27-1.21.1-patch-ablation-entity50-exploration-comparison.md). Keep the patch opt-in and treat its gain as workload-specific until more multiclient repetitions stabilize the result.
+
 Allocation data is unavailable. On this Windows/JDK setup, HotSpot reported an active JFR recording but every `jcmd JFR.dump` completed with 0 bytes written. No allocation improvement is claimed. Revisit this measure with a working allocation sampler before making conclusions about allocation rate.
 
 Build and tests were run with:

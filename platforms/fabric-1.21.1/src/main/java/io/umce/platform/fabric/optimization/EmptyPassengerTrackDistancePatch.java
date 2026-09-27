@@ -1,6 +1,5 @@
 package io.umce.platform.fabric.optimization;
 
-import io.umce.api.compat.CompatibilityStatus;
 import io.umce.api.patch.OptimizationCategory;
 import io.umce.api.patch.OptimizationPatch;
 import io.umce.api.patch.PatchContext;
@@ -10,10 +9,12 @@ import io.umce.api.patch.PatchHandle;
 import io.umce.api.patch.PatchRisk;
 import io.umce.api.platform.LoaderId;
 
-public final class SmallBoxSectionProbePatch implements OptimizationPatch {
-    public static final String ID = "small-box-section-probe";
+/** Experimental manual-only candidate; the initial 10-player ablation regressed. */
+public final class EmptyPassengerTrackDistancePatch implements OptimizationPatch {
+    public static final String ID = "empty-passenger-track-distance";
     private static final PatchDescriptor DESCRIPTOR = new PatchDescriptor(ID,
-            "Small entity-query section probes", OptimizationCategory.ENTITIES, PatchRisk.MEDIUM, false, true);
+            "Skip empty passenger traversal in entity tracking", OptimizationCategory.NETWORK,
+            PatchRisk.MEDIUM, false, false);
 
     @Override public PatchDescriptor getDescriptor() { return DESCRIPTOR; }
 
@@ -21,7 +22,7 @@ public final class SmallBoxSectionProbePatch implements OptimizationPatch {
     public PatchEvaluation evaluate(PatchContext context) {
         if (!"optimized".equalsIgnoreCase(context.getSettings().get("mode"))) {
             return new PatchEvaluation(PatchEvaluation.Status.DISABLED,
-                    "SAFE mode keeps the vanilla entity section scan active");
+                    "SAFE mode keeps vanilla passenger traversal active");
         }
         if (!"fabric-1.21.1".equals(context.getPlatform().getPlatformId())
                 || context.getPlatform().getLoaderId() != LoaderId.FABRIC
@@ -29,12 +30,12 @@ public final class SmallBoxSectionProbePatch implements OptimizationPatch {
             return new PatchEvaluation(PatchEvaluation.Status.UNSUPPORTED,
                     "This patch is verified only for Fabric on Minecraft 1.21.1");
         }
-        return PatchEvaluation.ready("Small-box packed section traversal is available on Fabric 1.21.1");
+        return PatchEvaluation.ready("Experimental passenger fast path for Fabric 1.21.1");
     }
 
     @Override
     public PatchHandle apply(PatchContext context) {
-        EntityQueryPatchRuntime.setSmallBoxSectionProbeEnabled(true);
-        return () -> EntityQueryPatchRuntime.setSmallBoxSectionProbeEnabled(false);
+        EntityTrackingPatchRuntime.setEmptyPassengerTrackDistanceEnabled(true);
+        return () -> EntityTrackingPatchRuntime.setEmptyPassengerTrackDistanceEnabled(false);
     }
 }

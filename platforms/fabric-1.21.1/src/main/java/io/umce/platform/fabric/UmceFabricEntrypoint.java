@@ -60,8 +60,20 @@ public final class UmceFabricEntrypoint implements ModInitializer {
                         .requires(source -> source.hasPermissionLevel(2))
                         .executes(context -> sendStatus(context.getSource().getServer(),
                                         context.getSource().getPlayer())))
+                        .then(CommandManager.literal("mode")
+                                .requires(source -> source.hasPermissionLevel(2))
+                                .executes(context -> sendMode(context.getSource().getPlayer()))
+                                .then(CommandManager.argument("value", StringArgumentType.word())
+                                        .executes(context -> changeMode(
+                                                StringArgumentType.getString(context, "value"),
+                                                context.getSource().getPlayer()))))
+                        .then(CommandManager.literal("reload")
+                                .requires(source -> source.hasPermissionLevel(2))
+                                .executes(context -> reloadConfig(context.getSource().getPlayer())))
                         .then(CommandManager.literal("patch")
                                 .requires(source -> source.hasPermissionLevel(2))
+                                .then(CommandManager.literal("list")
+                                        .executes(context -> sendPatchList(context.getSource().getPlayer())))
                                 .then(CommandManager.literal("enable")
                                         .then(CommandManager.argument("id", StringArgumentType.word())
                                                 .executes(context -> changePatch(
@@ -84,12 +96,12 @@ public final class UmceFabricEntrypoint implements ModInitializer {
     }
 
     private static int sendStatus(MinecraftServer server, ServerPlayerEntity player) {
-        String patchState = PATCH_MANAGER != null && PATCH_MANAGER.isSmallBoxSectionProbeEnabled()
-                ? "patch small-box-section-probe enabled" : "patches disabled";
+        String patchState = PATCH_MANAGER == null ? "patches unavailable"
+                : "patches " + PATCH_MANAGER.getPatchSummary() + " | GPU " + PATCH_MANAGER.getGpuMode();
         if (!TICK_PROFILING_ENABLED) {
             String message = "UMCE | MC 1.21.1 | Fabric | online players "
                     + server.getPlayerManager().getCurrentPlayerCount()
-                    + " | mode " + (PATCH_MANAGER == null ? "safe" : PATCH_MANAGER.getMode())
+                    + " | optimization mode " + (PATCH_MANAGER == null ? "safe" : PATCH_MANAGER.getMode())
                     + " | tick profiler disabled | " + patchState;
             if (player != null) player.sendMessage(Text.literal(message), false);
             else LOGGER.info(message);
@@ -97,7 +109,7 @@ public final class UmceFabricEntrypoint implements ModInitializer {
         }
         ProfileSnapshot profile = TICK_PROFILER.snapshot();
         String message = String.format(java.util.Locale.ROOT,
-                "UMCE | MC 1.21.1 | Fabric | online players %d | tick samples %d | mean %.3f ms | p95 %.3f ms | p99 %.3f ms | mode %s | %s",
+                "UMCE | MC 1.21.1 | Fabric | online players %d | tick samples %d | mean %.3f ms | p95 %.3f ms | p99 %.3f ms | optimization mode %s | %s",
                 server.getPlayerManager().getCurrentPlayerCount(), profile.getSampleCount(), profile.getMeanMilliseconds(),
                 profile.getP95Milliseconds(), profile.getP99Milliseconds(),
                 PATCH_MANAGER == null ? "safe" : PATCH_MANAGER.getMode(), patchState);
@@ -122,11 +134,61 @@ public final class UmceFabricEntrypoint implements ModInitializer {
             if (player != null) player.sendMessage(Text.literal(message), false);
             else LOGGER.info(message);
             return result.getState() == PatchState.FAILED ? 0 : 1;
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException | IllegalStateException exception) {
             String message = "UMCE patch error: " + exception.getMessage();
             if (player != null) player.sendMessage(Text.literal(message), false);
             else LOGGER.warn(message);
             return 0;
         }
+    }
+
+    private static int sendMode(ServerPlayerEntity player) {
+        String message = "UMCE optimization mode: "
+                + (PATCH_MANAGER == null ? "safe" : PATCH_MANAGER.getMode())
+                + " | edit config/umce.properties or use /umce mode <safe|auto|balanced|performance|memory|manual>";
+        if (player != null) player.sendMessage(Text.literal(message), false);
+        else LOGGER.info(message);
+        return 1;
+    }
+
+    private static int changeMode(String value, ServerPlayerEntity player) {
+        try {
+            PATCH_MANAGER.setMode(value);
+            String message = "UMCE optimization mode set to " + PATCH_MANAGER.getMode()
+                    + " | " + PATCH_MANAGER.getPatchSummary();
+            if (player != null) player.sendMessage(Text.literal(message), false);
+            else LOGGER.info(message);
+            return 1;
+        } catch (Exception exception) {
+            String message = "UMCE mode error: " + exception.getMessage();
+            if (player != null) player.sendMessage(Text.literal(message), false);
+            else LOGGER.warn(message);
+            return 0;
+        }
+    }
+
+    private static int reloadConfig(ServerPlayerEntity player) {
+        try {
+            PATCH_MANAGER.reload();
+            String message = "UMCE config reloaded: mode " + PATCH_MANAGER.getMode()
+                    + " | " + PATCH_MANAGER.getPatchSummary();
+            if (player != null) player.sendMessage(Text.literal(message), false);
+            else LOGGER.info(message);
+            return 1;
+        } catch (Exception exception) {
+            String message = "UMCE config reload failed: " + exception.getMessage() + "; patches are disabled";
+            if (player != null) player.sendMessage(Text.literal(message), false);
+            else LOGGER.warn(message);
+            return 0;
+        }
+    }
+
+    private static int sendPatchList(ServerPlayerEntity player) {
+        String message = "UMCE patches: " + (PATCH_MANAGER == null ? "unavailable"
+                : PATCH_MANAGER.getPatchSummary())
+                + " | set optimization.mode=manual and optimization.patch.<id>=on|off in config/umce.properties";
+        if (player != null) player.sendMessage(Text.literal(message), false);
+        else LOGGER.info(message);
+        return 1;
     }
 }

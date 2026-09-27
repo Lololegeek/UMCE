@@ -10,6 +10,8 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -17,7 +19,8 @@ import java.util.Set;
 public final class ConfigStore {
     private static final Set<String> KEYS = new HashSet<String>(Arrays.asList(
             "profile", "cpu.workers", "cpu.queueCapacity", "gpu.enabled",
-            "dashboard.enabled", "dashboard.bind", "compatibility.safeUnknownMods"));
+            "dashboard.enabled", "dashboard.bind", "compatibility.safeUnknownMods",
+            "optimization.mode", "optimization.gpu"));
     private final Path file;
     private final int availableProcessors;
 
@@ -29,12 +32,62 @@ public final class ConfigStore {
     }
 
     public synchronized UmceConfig loadOrCreate() throws IOException {
-        if (!Files.exists(file)) write(defaultProperties());
+        Properties defaults = defaultProperties();
+        if (!Files.exists(file)) {
+            write(defaults);
+        } else {
+            Properties existing = readProperties();
+            boolean changed = false;
+            for (String key : defaults.stringPropertyNames()) {
+                if (!existing.containsKey(key)) {
+                    existing.setProperty(key, defaults.getProperty(key));
+                    changed = true;
+                }
+            }
+            if (changed) write(existing);
+        }
         return load();
     }
 
     /** Reads changes made by an operator and returns a new immutable snapshot. */
     public synchronized UmceConfig reload() throws IOException {
+        return load();
+    }
+
+    public synchronized UmceConfig saveOptimizationSettings(OptimizationMode mode, String gpuMode,
+                                                             Map<String, PatchPreference> patchPreferences)
+            throws IOException {
+        if (mode == null) throw new IllegalArgumentException("mode must not be null");
+        if (patchPreferences == null) throw new IllegalArgumentException("patchPreferences must not be null");
+        String normalizedGpuMode = normalizeGpuMode(gpuMode);
+        Properties properties = readProperties();
+        properties.setProperty("optimization.mode", mode.toConfigValue());
+        properties.setProperty("optimization.gpu", normalizedGpuMode);
+        for (Map.Entry<String, PatchPreference> entry : patchPreferences.entrySet()) {
+            validatePatchId(entry.getKey());
+            if (entry.getValue() == null) throw new IllegalArgumentException("patch preference must not be null");
+            properties.setProperty("optimization.patch." + entry.getKey(), entry.getValue().toConfigValue());
+        }
+        write(properties);
+        return load();
+    }
+
+    /** Adds defaults for adapter-provided patch ids without hard-coding those ids in core. */
+    public synchronized UmceConfig ensurePatchPreferences(Map<String, PatchPreference> defaults)
+            throws IOException {
+        if (defaults == null) throw new IllegalArgumentException("defaults must not be null");
+        Properties properties = readProperties();
+        boolean changed = false;
+        for (Map.Entry<String, PatchPreference> entry : defaults.entrySet()) {
+            validatePatchId(entry.getKey());
+            if (entry.getValue() == null) throw new IllegalArgumentException("patch default must not be null");
+            String key = "optimization.patch." + entry.getKey();
+            if (!properties.containsKey(key)) {
+                properties.setProperty(key, entry.getValue().toConfigValue());
+                changed = true;
+            }
+        }
+        if (changed) write(properties);
         return load();
     }
 
@@ -44,12 +97,11 @@ public final class ConfigStore {
 
     private UmceConfig load() throws IOException {
         if (!Files.isRegularFile(file)) throw new IOException("Configuration file does not exist: " + file);
-        Properties properties = new Properties();
-        try (InputStream input = Files.newInputStream(file)) {
-            properties.load(input);
-        }
+        Properties properties = readProperties();
         for (String key : properties.stringPropertyNames()) {
-            if (!KEYS.contains(key)) throw new IOException("Unknown UMCE configuration key: " + key);
+            if (!KEYS.contains(key) && !isPatchPreferenceKey(key)) {
+                throw new IOException("Unknown UMCE configuration key: " + key);
+            }
         }
         String profile = required(properties, "profile");
         if (!profile.matches("[a-z][a-z0-9_-]{0,31}")) throw new IOException("Invalid profile name: " + profile);
@@ -64,8 +116,26 @@ public final class ConfigStore {
             throw new IOException("Dashboard bind must be loopback-only");
         }
         boolean safeUnknownMods = strictBoolean(properties, "compatibility.safeUnknownMods", true);
+        OptimizationMode optimizationMode = OptimizationMode.parse(
+                properties.getProperty("optimization.mode", "safe"));
+        String gpuMode = normalizeGpuMode(properties.getProperty("optimization.gpu", "auto"));
+        Map<String, PatchPreference> patchPreferences = new LinkedHashMap<String, PatchPreference>();
+        for (String key : properties.stringPropertyNames()) {
+            if (isPatchPreferenceKey(key)) {
+                String patchId = key.substring("optimization.patch.".length());
+                validatePatchId(patchId);
+                patchPreferences.put(patchId, PatchPreference.parse(properties.getProperty(key), key));
+            }
+        }
         return new UmceConfig(profile, workers, queueCapacity, gpuEnabled,
-                dashboardEnabled, bind, safeUnknownMods);
+                dashboardEnabled, bind, safeUnknownMods, optimizationMode, gpuMode, patchPreferences);
+    }
+
+    private Properties readProperties() throws IOException {
+        if (!Files.isRegularFile(file)) throw new IOException("Configuration file does not exist: " + file);
+        Properties properties = new Properties();
+        try (InputStream input = Files.newInputStream(file)) { properties.load(input); }
+        return properties;
     }
 
     private void write(Properties properties) throws IOException {
@@ -79,7 +149,7 @@ public final class ConfigStore {
                 properties.store(output, "UMCE server configuration. Unknown compatibility is conservative.");
             }
             try {
-                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE);
+                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -98,7 +168,28 @@ public final class ConfigStore {
         properties.setProperty("dashboard.enabled", "false");
         properties.setProperty("dashboard.bind", "127.0.0.1");
         properties.setProperty("compatibility.safeUnknownMods", "true");
+        properties.setProperty("optimization.mode", "safe");
+        properties.setProperty("optimization.gpu", "auto");
         return properties;
+    }
+
+    private static boolean isPatchPreferenceKey(String key) {
+        return key.startsWith("optimization.patch.");
+    }
+
+    private static void validatePatchId(String patchId) throws IOException {
+        if (patchId == null || !patchId.matches("[a-z][a-z0-9-]{0,63}")) {
+            throw new IOException("Invalid optimization patch id: " + patchId);
+        }
+    }
+
+    private static String normalizeGpuMode(String value) throws IOException {
+        if (value == null) return "auto";
+        String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!("auto".equals(normalized) || "on".equals(normalized) || "off".equals(normalized))) {
+            throw new IOException("Invalid optimization.gpu: " + value + " (expected auto, on, or off)");
+        }
+        return normalized;
     }
 
     private static String required(Properties properties, String key) throws IOException {

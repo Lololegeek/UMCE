@@ -11,13 +11,16 @@ param(
     [ValidateRange(1, 32767)][int]$TntFuseTicks = 80,
     [ValidateRange(0, 3600)][int]$SaveAllIntervalSeconds = 0,
     [switch]$IdleClients,
-    [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
+    [ValidateRange(1, 3600)][int]$MeasureSeconds = 60,
+    [ValidateRange(0, 3600)][int]$WarmupSeconds = 20,
+    [switch]$QuickStartup,
     [ValidateRange(1, 10)][int]$Repeats = 3,
     [ValidatePattern('^[1-9][0-9]*[kKmMgGtT]$')][string]$InitialHeap = '8G',
     [ValidatePattern('^[1-9][0-9]*[kKmMgGtT]$')][string]$MaximumHeap = '8G',
     [string]$UmceJar = '',
     [string]$ResultTag = '',
     [switch]$EnableTickProfiler,
+    [switch]$EnableSmallBoxSectionProbe,
     [switch]$PatchComparison,
     [switch]$ProfileOnly,
     [switch]$ProfilePatchEnabled,
@@ -121,19 +124,35 @@ function Write-StressDatapack([string]$WorldDirectory) {
     New-Item -ItemType Directory -Force $functions | Out-Null
     Set-Content -LiteralPath (Join-Path $pack 'pack.mcmeta') -Encoding utf8 -Value '{"pack":{"pack_format":48,"description":"UMCE reproducible stress scenario for 1.21.1"}}'
     $commands = [Collections.Generic.List[string]]::new()
+    $spawnGridCount = [Math]::Max($entitySpawnCount, $TntCount)
+    $entityColumns = if ($QuickStartup) { [Math]::Max(1, [Math]::Ceiling([Math]::Sqrt($spawnGridCount))) } else { 100 }
+    $villagerColumns = if ($QuickStartup) { [Math]::Max(1, [Math]::Ceiling([Math]::Sqrt($Villagers))) } else { 25 }
     $commands.Add('gamerule doMobSpawning false')
     $commands.Add('gamerule doDaylightCycle false')
     $commands.Add('gamerule doWeatherCycle false')
     $commands.Add('execute positioned 0 320 0 positioned over motion_blocking_no_leaves run setworldspawn ~ ~1 ~')
-    $commands.Add('forceload add -128 -128 127 127')
+    $forceRadius = if (-not $QuickStartup -or $SaveAllIntervalSeconds -gt 0) { 127 } else {
+        [Math]::Max(32, [Math]::Min(64, [Math]::Ceiling(([Math]::Sqrt([Math]::Max($entitySpawnCount, $TntCount)) * 2) + 8)))
+    }
+    $commands.Add("forceload add -$forceRadius -$forceRadius $forceRadius $forceRadius")
     for ($index = 0; $index -lt $entitySpawnCount; $index++) {
-        $x = -100 + (($index % 100) * 2)
-        $z = -100 + ([Math]::Floor($index / 100) * 2)
+        if ($QuickStartup) {
+            $x = -[Math]::Floor($entityColumns / 2) * 2 + (($index % $entityColumns) * 2)
+            $z = -[Math]::Floor($entityColumns / 2) * 2 + ([Math]::Floor($index / $entityColumns) * 2)
+        } else {
+            $x = -100 + (($index % 100) * 2)
+            $z = -100 + ([Math]::Floor($index / 100) * 2)
+        }
         $commands.Add("execute positioned $x 320 $z positioned over motion_blocking_no_leaves run summon minecraft:pig ~ ~1 ~ {PersistenceRequired:1b}")
     }
     for ($index = 0; $index -lt $Villagers; $index++) {
-        $x = -96 + (($index % 25) * 4)
-        $z = -96 + ([Math]::Floor($index / 25) * 4)
+        if ($QuickStartup) {
+            $x = -[Math]::Floor($villagerColumns / 2) * 4 + (($index % $villagerColumns) * 4)
+            $z = -[Math]::Floor($villagerColumns / 2) * 4 + ([Math]::Floor($index / $villagerColumns) * 4)
+        } else {
+            $x = -96 + (($index % 25) * 4)
+            $z = -96 + ([Math]::Floor($index / 25) * 4)
+        }
         $commands.Add("execute positioned $x 320 $z positioned over motion_blocking_no_leaves run summon minecraft:villager ~ ~1 ~ {PersistenceRequired:1b}")
     }
 
@@ -156,15 +175,20 @@ function Write-StressDatapack([string]$WorldDirectory) {
 
     # Paired observers act as self-running redstone clocks.
     for ($clock = 0; $clock -lt $RedstoneClockPairs; $clock++) {
-        $x = -96 + ($clock * 3)
+        $x = if ($QuickStartup) { -8 + ($clock * 3) } else { -96 + ($clock * 3) }
         $commands.Add("setblock $x 79 24 minecraft:stone")
         $commands.Add("setblock $($x + 1) 79 24 minecraft:stone")
         $commands.Add("setblock $x 80 24 minecraft:observer[facing=east]")
         $commands.Add("setblock $($x + 1) 80 24 minecraft:observer[facing=west]")
     }
     for ($index = 0; $index -lt $TntCount; $index++) {
-        $x = -100 + (($index % 100) * 2)
-        $z = -100 + ([Math]::Floor($index / 100) * 2)
+        if ($QuickStartup) {
+            $x = -[Math]::Floor($entityColumns / 2) * 2 + (($index % $entityColumns) * 2)
+            $z = -[Math]::Floor($entityColumns / 2) * 2 + ([Math]::Floor($index / $entityColumns) * 2)
+        } else {
+            $x = -100 + (($index % 100) * 2)
+            $z = -100 + ([Math]::Floor($index / 100) * 2)
+        }
         $commands.Add("execute positioned $x 320 $z positioned over motion_blocking_no_leaves run summon minecraft:tnt ~ ~1 ~ {fuse:32767s}")
     }
     $batchSize = 200
@@ -360,7 +384,7 @@ function Stop-Server($Server) {
 
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $usesUmce = $Condition -ne 'without-umce'
-    $enableSmallBoxSectionProbe = $Condition -eq 'patch-enabled' -or ($ProfileOnly -and $ProfilePatchEnabled)
+    $enableSmallBoxSectionProbe = $usesUmce -and ($Condition -eq 'patch-enabled' -or ($ProfileOnly -and $ProfilePatchEnabled) -or $EnableSmallBoxSectionProbe.IsPresent)
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
     $directory = Join-Path $runsRoot $label
@@ -385,7 +409,11 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         }
         Send-Command $server 'list'
         if ($usesUmce) { Send-Command $server 'umce status' }
-        Wait-Server $server 5000
+        if ($QuickStartup) {
+            Wait-ForLog $server 'There are [0-9]+ of a max' 30
+        } else {
+            Wait-Server $server 5000
+        }
         $playerLine = @($server.Lines | Where-Object { $_ -match 'There are ([0-9]+) of a max' } | Select-Object -Last 1)
         if ($playerLine.Count -eq 0) {
             throw "Could not verify online player count for $label; inspect $($server.Log)."
@@ -398,9 +426,9 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             $clients.Process.StandardInput.WriteLine('start')
             $clients.Process.StandardInput.Flush()
         }
-        Wait-Server $server 1000
+        if (-not $QuickStartup) { Wait-Server $server 1000 }
 
-        $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
+        $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds($WarmupSeconds)
         while ([DateTimeOffset]::UtcNow -lt $warmupEnd) { Wait-Server $server 500 }
         if ($HeapSnapshotOnly) {
             Wait-Server $server ($MeasureSeconds * 1000)
@@ -504,7 +532,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         $runCpuPercent = (($server.Process.TotalProcessorTime.TotalMilliseconds - $measurementStartedCpu) / $measurementDuration) * 100.0
         foreach ($sample in $samples) { $sample.process_cpu_percent_one_core = $runCpuPercent }
         if ($usesUmce) { Send-Command $server 'umce status' }
-        Wait-Server $server 1000
+        if (-not $QuickStartup) { Wait-Server $server 1000 }
         $samples
     } finally { Stop-StressClients $clients; Stop-Server $server }
 }
@@ -539,11 +567,11 @@ try {
     for ($batch = 0; $batch -lt $batchCount; $batch++) {
         $batchName = 'setup_' + $batch.ToString('D3', $culture)
         Send-Command $setupServer "function umce:$batchName"
-        Wait-Server $setupServer 1000
+        Wait-Server $setupServer $(if ($QuickStartup) { 150 } else { 1000 })
         Write-Progress -Activity 'Creating shared Minecraft stress world' -Status "Function $($batch + 1) / $batchCount" -PercentComplete (100 * ($batch + 1) / $batchCount)
     }
     Send-Command $setupServer 'save-all flush'
-    Wait-Server $setupServer 10000
+    Wait-Server $setupServer $(if ($QuickStartup) { 3000 } else { 10000 })
 } finally { Stop-Server $setupServer }
 if (-not (Test-Path -LiteralPath (Join-Path $worldPath 'level.dat'))) { throw 'Stress setup did not save a Minecraft world.' }
 $entityCounts = (& $python $entityCounter $worldPath | ConvertFrom-Json)
@@ -588,7 +616,7 @@ if ($PatchComparison) {
     $lines.Add('# UMCE Fabric 1.21.1 patch ablation')
     $lines.Add('')
     $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
-    $lines.Add("Patch: ``small-box-section-probe``; baseline has no UMCE, diagnostics-only loads UMCE in SAFE mode, and patch-enabled uses OPTIMIZED mode with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup 20 s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
+    $lines.Add("Patch: ``small-box-section-probe``; baseline has no UMCE, diagnostics-only loads UMCE in SAFE mode, and patch-enabled uses OPTIMIZED mode with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup $WarmupSeconds s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
     $lines.Add("UMCE artifact SHA-256: $artifactSha256")
     $lines.Add('')
     $lines.Add('| Condition | Windows | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | CPU (% one core) | Working set MiB |')
@@ -671,7 +699,8 @@ $lines.Add('')
 $movement = if ($IdleClients) { 'idle clients' } else { 'clients walking into new chunks' }
 $saveLoad = if ($SaveAllIntervalSeconds -gt 0) { "save-all flush every $SaveAllIntervalSeconds seconds" } else { 'no forced periodic saves' }
 $tickProfilerMode = if ($EnableTickProfiler) { 'enabled by -Dumce.tickProfiler.enabled=true for UMCE runs' } else { 'disabled for UMCE runs (default)' }
-$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). UMCE tick profiler: $tickProfilerMode. Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers and $($entityCounts.tnt) primed TNT verified from saved Anvil entity data, $($HopperRows * 16) filled hoppers in $HopperRows rows with blocked destination chests, $RedstoneClockPairs paired observer clocks, 8-chunk view/simulation distances, $movement, and $saveLoad. A 16 x 16 chunk region is force-loaded. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
+$patchComparisonDescription = if ($EnableSmallBoxSectionProbe) { 'The UMCE condition explicitly enables small-box-section-probe.' } else { 'UMCE gameplay patches are not explicitly enabled.' }
+$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). UMCE tick profiler: $tickProfilerMode. $patchComparisonDescription Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers and $($entityCounts.tnt) primed TNT verified from saved Anvil entity data, $($HopperRows * 16) filled hoppers in $HopperRows rows with blocked destination chests, $RedstoneClockPairs paired observer clocks, 8-chunk view/simulation distances, $movement, and $saveLoad. A 16 x 16 chunk region is force-loaded. Each run warms up $WarmupSeconds seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
 $lines.Add("JVM args: -Xms$InitialHeap -Xmx$MaximumHeap. TNT fuse during the measured interval: $TntFuseTicks ticks. Baseline and UMCE alternate first position by repeat number.")
 $lines.Add('')
 $lines.Add('| Condition | Samples | Mean rolling MSPT | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | Max rolling MSPT | MSPT stddev | CPU (% one core) | Working set MiB |')

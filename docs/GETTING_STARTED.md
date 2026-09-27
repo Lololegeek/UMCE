@@ -111,3 +111,19 @@ The matrix covers the repository's current Fabric 1.21.1 adapter only. Its
 per-case reports include tick percentiles, CPU, working set, and generated
 chunks; allocation rate, GC pause totals, and network byte counters are not
 available in this harness.
+
+For one quick pass over every workload family with a strict ten-minute cap,
+run:
+
+```powershell
+./tools/run-quick-benchmarks.ps1
+```
+
+This runs one short, scaled baseline/UMCE pair per scenario, enables the
+small-box entity patch for entity-focused cases, records MSPT, P95/P99, CPU,
+and process working set, and writes one combined Markdown table plus raw CSVs
+and logs under `benchmark-results/`. Use `-MeasureSeconds 8` to collect a
+slightly longer sample while keeping the global cap at ten minutes. Workloads
+are deliberately scaled down for speed; this screen is not a replacement for
+the full matrix above. If a scenario cannot finish within its allotted share,
+the report marks it as timed out or not run instead of extending the limit.

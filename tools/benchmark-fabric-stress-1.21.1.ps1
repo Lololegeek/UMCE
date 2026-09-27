@@ -553,6 +553,18 @@ function Get-StandardDeviation([double[]]$Values) {
     return [Math]::Sqrt($sumSquares / ($Values.Count - 1))
 }
 
+function Save-PartialSamples([Collections.Generic.List[object]]$Samples) {
+    if ($Samples.Count -eq 0) { return }
+    $date = Get-Date -Format 'yyyy-MM-dd'
+    $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
+    if ($PatchComparison) {
+        $csv = Join-Path $outputRoot "$date-1.21.1-patch-ablation-entity-section-probe$runTag-samples.csv"
+    } else {
+        $csv = Join-Path $outputRoot "$date-1.21.1-stress$runTag-samples.csv"
+    }
+    $Samples | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding utf8
+}
+
 # Create one immutable world with the selected stress features.
 if (Test-Path -LiteralPath $seedRoot) { Remove-Item -LiteralPath $seedRoot -Recurse -Force }
 New-Item -ItemType Directory -Force $seedRoot | Out-Null
@@ -596,6 +608,7 @@ if ($HeapSnapshotOnly) {
         }
         foreach ($condition in $order) {
             foreach ($sample in (Measure-Run $condition $repeat $worldPath)) { $all.Add($sample) }
+            Save-PartialSamples $all
         }
     }
 } else {
@@ -603,6 +616,7 @@ if ($HeapSnapshotOnly) {
         $order = if ($repeat % 2 -eq 1) { @('without-umce', 'with-umce') } else { @('with-umce', 'without-umce') }
         foreach ($condition in $order) {
             foreach ($sample in (Measure-Run $condition $repeat $worldPath)) { $all.Add($sample) }
+            Save-PartialSamples $all
         }
     }
 }

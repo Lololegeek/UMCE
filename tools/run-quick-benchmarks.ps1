@@ -80,9 +80,50 @@ function Format-Number([double]$Value, [int]$Digits = 2) {
     return $Value.ToString("F$Digits", [Globalization.CultureInfo]::InvariantCulture)
 }
 
+function New-PartialRow($Scenario, [string]$Workload, [string]$CsvPath, [string]$FallbackStatus) {
+    $samples = if (Test-Path -LiteralPath $CsvPath) { @(Import-Csv -LiteralPath $CsvPath) } else { @() }
+    $base = @($samples | Where-Object condition -eq 'without-umce')
+    $with = @($samples | Where-Object condition -eq 'with-umce')
+    $baseMspt = Get-Median ([double[]]@($base | ForEach-Object { if ($_.tick_mean_ms) { [double]$_.tick_mean_ms } }))
+    $withMspt = Get-Median ([double[]]@($with | ForEach-Object { if ($_.tick_mean_ms) { [double]$_.tick_mean_ms } }))
+    $delta = if ($baseMspt -gt 0 -and -not [double]::IsNaN($withMspt)) { (($withMspt - $baseMspt) / $baseMspt) * 100.0 } else { [double]::NaN }
+    $status = if ($samples.Count -gt 0) { "partial; $($base.Count) baseline / $($with.Count) UMCE samples" } else { $FallbackStatus }
+    return [pscustomobject]@{
+        Scenario = $Scenario.Name; Workload = $Workload; Status = $status
+        BaselineMspt = Format-Number $baseMspt 3; UmceMspt = Format-Number $withMspt 3; Delta = if ([double]::IsNaN($delta)) { 'n/a' } else { "$(Format-Number $delta 2)%" }
+        BaselineP95 = Format-Number (Get-Mean $base 'tick_p95_ms') 3; UmceP95 = Format-Number (Get-Mean $with 'tick_p95_ms') 3
+        BaselineP99 = Format-Number (Get-Mean $base 'tick_p99_ms') 3; UmceP99 = Format-Number (Get-Mean $with 'tick_p99_ms') 3
+        BaselineCpu = Format-Number (Get-Mean $base 'process_cpu_percent_one_core') 1; UmceCpu = Format-Number (Get-Mean $with 'process_cpu_percent_one_core') 1
+        BaselineRam = Format-Number ((Get-Mean $base 'working_set_bytes') / 1MB) 1; UmceRam = Format-Number ((Get-Mean $with 'working_set_bytes') / 1MB) 1
+    }
+}
+
 $rows = [Collections.Generic.List[object]]::new()
+foreach ($scenario in $scenarios) {
+    $rows.Add([pscustomobject]@{ Scenario = $scenario.Name; Workload = ''; Status = 'pending'; BaselineMspt = 'n/a'; UmceMspt = 'n/a'; Delta = 'n/a'; BaselineP95 = 'n/a'; UmceP95 = 'n/a'; BaselineP99 = 'n/a'; UmceP99 = 'n/a'; BaselineCpu = 'n/a'; UmceCpu = 'n/a'; BaselineRam = 'n/a'; UmceRam = 'n/a' })
+}
+$reportPath = Join-Path $outputRoot "$stamp-1.21.1-quick-bench-$tag.md"
+
+function Write-QuickSummary {
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('# UMCE quick benchmark matrix — Fabric 1.21.1')
+    $lines.Add('')
+    $lines.Add("Updated: $([DateTimeOffset]::UtcNow.ToString('u')); elapsed: $([Math]::Round($timer.Elapsed.TotalSeconds, 1))s / limit $budgetSeconds s.")
+    $lines.Add("Rapid scaled screen. Each completed row uses one baseline/UMCE pair, $warmupBudget s warmup, $measureBudget s measurement, 1G/2G JVM heap, and identical copied seed worlds. Entity, player, villager, hopper, redstone, chunk I/O, worldgen, networking, collision, TNT, and mixed workload families are represented; exact dimensions are in the workload column. Rows with an enabled entity patch explicitly say so; other UMCE runs use SAFE mode.")
+    $lines.Add('')
+    $lines.Add('| Workload | Scenario size | Result | Baseline MSPT | UMCE MSPT | Change | Baseline P95 | UMCE P95 | Baseline P99 | UMCE P99 | CPU baseline / UMCE (% one core) | RAM baseline / UMCE (MiB) |')
+    $lines.Add('|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
+    foreach ($row in $rows) {
+        $lines.Add("| $($row.Scenario) | $($row.Workload) | $($row.Status) | $($row.BaselineMspt) | $($row.UmceMspt) | $($row.Delta) | $($row.BaselineP95) | $($row.UmceP95) | $($row.BaselineP99) | $($row.UmceP99) | $($row.BaselineCpu) / $($row.UmceCpu) | $($row.BaselineRam) / $($row.UmceRam) |")
+    }
+    $lines.Add('')
+    $lines.Add('Positive MSPT change means slower with UMCE. This one-pair, shortened run is a screening result, not statistically strong evidence; use the full-fidelity paired matrix before accepting or rejecting a patch. The harness does not measure allocation rate. Individual logs and raw CSV files are saved beside this report.')
+    $lines | Set-Content -LiteralPath $reportPath -Encoding utf8
+}
+
 $powershell = (Get-Process -Id $PID).Path
 $culture = [Globalization.CultureInfo]::InvariantCulture
+Write-QuickSummary
 
 for ($index = 0; $index -lt $scenarios.Count; $index++) {
     $scenario = $scenarios[$index]
@@ -90,12 +131,13 @@ for ($index = 0; $index -lt $scenarios.Count; $index++) {
     $scenariosLeft = $scenarios.Count - $index
     if ($remaining -lt 8) {
         for ($skip = $index; $skip -lt $scenarios.Count; $skip++) {
-            $rows.Add([pscustomobject]@{ Scenario = $scenarios[$skip].Name; Workload = ''; Status = "not run: $MaxMinutes min limit"; BaselineMspt = 'n/a'; UmceMspt = 'n/a'; Delta = 'n/a'; BaselineP95 = 'n/a'; UmceP95 = 'n/a'; BaselineP99 = 'n/a'; UmceP99 = 'n/a'; BaselineCpu = 'n/a'; UmceCpu = 'n/a'; BaselineRam = 'n/a'; UmceRam = 'n/a' })
+            $rows[$skip] = [pscustomobject]@{ Scenario = $scenarios[$skip].Name; Workload = ''; Status = "not run: $MaxMinutes min limit"; BaselineMspt = 'n/a'; UmceMspt = 'n/a'; Delta = 'n/a'; BaselineP95 = 'n/a'; UmceP95 = 'n/a'; BaselineP99 = 'n/a'; UmceP99 = 'n/a'; BaselineCpu = 'n/a'; UmceCpu = 'n/a'; BaselineRam = 'n/a'; UmceRam = 'n/a' }
         }
+        Write-QuickSummary
         break
     }
 
-    $scenarioBudget = [Math]::Min(75, [Math]::Max(8, [Math]::Floor($remaining / $scenariosLeft)))
+    $scenarioBudget = [Math]::Min(75, [Math]::Max(15, [Math]::Floor($remaining / [Math]::Min(8, $scenariosLeft))))
     $resultTag = "quick-$tag-$($scenario.Name)"
     $csvPath = Join-Path $outputRoot "$stamp-1.21.1-stress-$resultTag-samples.csv"
     $outLog = Join-Path $outputRoot "$stamp-1.21.1-stress-$resultTag-run.log"
@@ -149,12 +191,14 @@ for ($index = 0; $index -lt $scenarios.Count; $index++) {
 
     $workload = "players=$($scenario.Players), entities=$($scenario.Entities), villagers=$($scenario.Villagers), hopperRows=$($scenario.HopperRows), redstone=$($scenario.RedstoneClockPairs), TNT=$($scenario.TntCount)"
     if ($timedOut) {
-        $rows.Add([pscustomobject]@{ Scenario = $scenario.Name; Workload = $workload; Status = "timed out (${scenarioBudget}s)"; BaselineMspt = 'n/a'; UmceMspt = 'n/a'; Delta = 'n/a'; BaselineP95 = 'n/a'; UmceP95 = 'n/a'; BaselineP99 = 'n/a'; UmceP99 = 'n/a'; BaselineCpu = 'n/a'; UmceCpu = 'n/a'; BaselineRam = 'n/a'; UmceRam = 'n/a' })
+        $rows[$index] = New-PartialRow $scenario $workload $csvPath "timed out (${scenarioBudget}s)"
+        Write-QuickSummary
         Write-Warning "Scenario $($scenario.Name) stopped at its time budget; remaining rows will be marked not run if the global limit is reached."
         continue
     }
     if ($exitCode -ne 0 -or -not (Test-Path -LiteralPath $csvPath)) {
-        $rows.Add([pscustomobject]@{ Scenario = $scenario.Name; Workload = $workload; Status = "failed (exit $exitCode); see run log"; BaselineMspt = 'n/a'; UmceMspt = 'n/a'; Delta = 'n/a'; BaselineP95 = 'n/a'; UmceP95 = 'n/a'; BaselineP99 = 'n/a'; UmceP99 = 'n/a'; BaselineCpu = 'n/a'; UmceCpu = 'n/a'; BaselineRam = 'n/a'; UmceRam = 'n/a' })
+        $rows[$index] = New-PartialRow $scenario $workload $csvPath "failed (exit $exitCode); see run log"
+        Write-QuickSummary
         Write-Warning "Scenario $($scenario.Name) failed; see $outLog and $errLog."
         continue
     }
@@ -166,31 +210,17 @@ for ($index = 0; $index -lt $scenarios.Count; $index++) {
     $withMspt = Get-Median ([double[]]@($with | ForEach-Object { [double]$_.tick_mean_ms }))
     $delta = if ($baseMspt -gt 0 -and -not [double]::IsNaN($withMspt)) { (($withMspt - $baseMspt) / $baseMspt) * 100.0 } else { [double]::NaN }
     $condition = if ($scenario.Patch) { 'UMCE + small-box-section-probe' } else { 'UMCE SAFE (no gameplay patch)' }
-    $rows.Add([pscustomobject]@{
+    $rows[$index] = [pscustomobject]@{
         Scenario = $scenario.Name; Workload = $workload; Status = "completed; $condition"
         BaselineMspt = Format-Number $baseMspt 3; UmceMspt = Format-Number $withMspt 3; Delta = "$(Format-Number $delta 2)%"
         BaselineP95 = Format-Number (Get-Mean $base 'tick_p95_ms') 3; UmceP95 = Format-Number (Get-Mean $with 'tick_p95_ms') 3
         BaselineP99 = Format-Number (Get-Mean $base 'tick_p99_ms') 3; UmceP99 = Format-Number (Get-Mean $with 'tick_p99_ms') 3
         BaselineCpu = Format-Number (Get-Mean $base 'process_cpu_percent_one_core') 1; UmceCpu = Format-Number (Get-Mean $with 'process_cpu_percent_one_core') 1
         BaselineRam = Format-Number ((Get-Mean $base 'working_set_bytes') / 1MB) 1; UmceRam = Format-Number ((Get-Mean $with 'working_set_bytes') / 1MB) 1
-    })
+    }
+    Write-QuickSummary
 }
 
 $timer.Stop()
-$reportPath = Join-Path $outputRoot "$stamp-1.21.1-quick-bench-$tag.md"
-$lines = [Collections.Generic.List[string]]::new()
-$lines.Add('# UMCE quick benchmark matrix — Fabric 1.21.1')
-$lines.Add('')
-$lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u')); elapsed: $([Math]::Round($timer.Elapsed.TotalSeconds, 1))s / limit $budgetSeconds s.")
-$lines.Add("Rapid scaled screen. Each completed row uses one baseline/UMCE pair, $warmupBudget s warmup, $measureBudget s measurement, 1G/2G JVM heap, and identical copied seed worlds. Entity, player, villager, hopper, redstone, chunk I/O, worldgen, networking, collision, TNT, and mixed workload families are represented; exact dimensions are in the workload column. Rows with an enabled entity patch explicitly say so; other UMCE runs use SAFE mode.")
-$lines.Add('')
-$lines.Add('| Workload | Scenario size | Result | Baseline MSPT | UMCE MSPT | Change | Baseline P95 | UMCE P95 | Baseline P99 | UMCE P99 | CPU baseline / UMCE (% one core) | RAM baseline / UMCE (MiB) |')
-$lines.Add('|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
-foreach ($row in $rows) {
-    $lines.Add("| $($row.Scenario) | $($row.Workload) | $($row.Status) | $($row.BaselineMspt) | $($row.UmceMspt) | $($row.Delta) | $($row.BaselineP95) | $($row.UmceP95) | $($row.BaselineP99) | $($row.UmceP99) | $($row.BaselineCpu) / $($row.UmceCpu) | $($row.BaselineRam) / $($row.UmceRam) |")
-}
-$lines.Add('')
-$lines.Add('Positive MSPT change means slower with UMCE. This one-pair, shortened run is a screening result, not statistically strong evidence; use the full-fidelity paired matrix before accepting or rejecting a patch. The harness does not measure allocation rate. Individual logs and raw CSV files are saved beside this report.')
-$lines | Set-Content -LiteralPath $reportPath -Encoding utf8
 $rows | Format-Table Scenario, Status, BaselineMspt, UmceMspt, Delta -AutoSize | Out-Host
 Write-Output "Quick benchmark report: $reportPath"

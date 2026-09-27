@@ -125,5 +125,7 @@ and process working set, and writes one combined Markdown table plus raw CSVs
 and logs under `benchmark-results/`. Use `-MeasureSeconds 8` to collect a
 slightly longer sample while keeping the global cap at ten minutes. Workloads
 are deliberately scaled down for speed; this screen is not a replacement for
-the full matrix above. If a scenario cannot finish within its allotted share,
-the report marks it as timed out or not run instead of extending the limit.
+the full matrix above. The summary is refreshed while the run proceeds and raw
+samples are checkpointed after each completed condition. If a scenario cannot
+finish within its allotted share, the report marks it as timed out or not run
+instead of extending the limit.

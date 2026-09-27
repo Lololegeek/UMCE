@@ -2,9 +2,15 @@
 param(
     [string]$JavaHome = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot',
     [string]$GradleUserHome = 'C:\gradle-cache-umce',
-    [ValidateRange(1, 100)][int]$Players = 100,
+    [ValidateRange(0, 100)][int]$Players = 100,
     [ValidateRange(0, 10000)][int]$Entities = 10000,
     [ValidateRange(0, 500)][int]$Villagers = 500,
+    [ValidateRange(0, 64)][int]$HopperRows = 16,
+    [ValidateRange(0, 64)][int]$RedstoneClockPairs = 8,
+    [ValidateRange(0, 10000)][int]$TntCount = 0,
+    [ValidateRange(1, 32767)][int]$TntFuseTicks = 80,
+    [ValidateRange(0, 3600)][int]$SaveAllIntervalSeconds = 0,
+    [switch]$IdleClients,
     [ValidateRange(10, 3600)][int]$MeasureSeconds = 60,
     [ValidateRange(1, 10)][int]$Repeats = 3,
     [ValidatePattern('^[1-9][0-9]*[kKmMgGtT]$')][string]$InitialHeap = '8G',
@@ -126,8 +132,8 @@ function Write-StressDatapack([string]$WorldDirectory) {
         $commands.Add("execute positioned $x 320 $z positioned over motion_blocking_no_leaves run summon minecraft:villager ~ ~1 ~ {PersistenceRequired:1b}")
     }
 
-    # Sixteen blocked hopper lines keep item-transfer checks active during measurement.
-    for ($row = 0; $row -lt 16; $row++) {
+    # Blocked hopper lines keep item-transfer checks active during measurement.
+    for ($row = 0; $row -lt $HopperRows; $row++) {
         $z = -8 + $row
         for ($column = 0; $column -lt 16; $column++) {
             $x = -8 + $column
@@ -144,12 +150,17 @@ function Write-StressDatapack([string]$WorldDirectory) {
     }
 
     # Paired observers act as self-running redstone clocks.
-    for ($clock = 0; $clock -lt 8; $clock++) {
+    for ($clock = 0; $clock -lt $RedstoneClockPairs; $clock++) {
         $x = -96 + ($clock * 3)
         $commands.Add("setblock $x 79 24 minecraft:stone")
         $commands.Add("setblock $($x + 1) 79 24 minecraft:stone")
         $commands.Add("setblock $x 80 24 minecraft:observer[facing=east]")
         $commands.Add("setblock $($x + 1) 80 24 minecraft:observer[facing=west]")
+    }
+    for ($index = 0; $index -lt $TntCount; $index++) {
+        $x = -100 + (($index % 100) * 2)
+        $z = -100 + ([Math]::Floor($index / 100) * 2)
+        $commands.Add("execute positioned $x 320 $z positioned over motion_blocking_no_leaves run summon minecraft:tnt ~ ~1 ~ {fuse:32767s}")
     }
     $batchSize = 200
     $batchCount = [Math]::Ceiling($commands.Count / $batchSize)
@@ -368,8 +379,10 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         if ($observedPlayers -lt $Players) {
             throw "Workload shortfall in ${label}: players $observedPlayers/$Players; inspect $($server.Log)."
         }
-        $clients.Process.StandardInput.WriteLine('start')
-        $clients.Process.StandardInput.Flush()
+        if (-not $IdleClients) {
+            $clients.Process.StandardInput.WriteLine('start')
+            $clients.Process.StandardInput.Flush()
+        }
         Wait-Server $server 1000
 
         $warmupEnd = [DateTimeOffset]::UtcNow.AddSeconds(20)
@@ -420,9 +433,19 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         }
         $samples = [Collections.Generic.List[object]]::new()
         $measureEnd = [DateTimeOffset]::UtcNow.AddSeconds($MeasureSeconds)
+        $measurementStartedAt = [DateTimeOffset]::UtcNow
+        $measurementStartedCpu = $server.Process.TotalProcessorTime.TotalMilliseconds
         $previousCpu = $server.Process.TotalProcessorTime.TotalMilliseconds
         $previousAt = [DateTimeOffset]::UtcNow
+        $nextSaveAt = if ($SaveAllIntervalSeconds -gt 0) { [DateTimeOffset]::UtcNow.AddSeconds($SaveAllIntervalSeconds) } else { [DateTimeOffset]::MaxValue }
+        if ($TntCount -gt 0) {
+            Send-Command $server "execute as @e[type=minecraft:tnt] run data merge entity @s {fuse:$($TntFuseTicks)s}"
+        }
         while ([DateTimeOffset]::UtcNow -lt $measureEnd) {
+            if ([DateTimeOffset]::UtcNow -ge $nextSaveAt) {
+                Send-Command $server 'save-all flush'
+                $nextSaveAt = [DateTimeOffset]::UtcNow.AddSeconds($SaveAllIntervalSeconds)
+            }
             $lineStart = $server.Lines.Count
             $sampleAt = [DateTimeOffset]::UtcNow
             Send-Command $server 'tick query'
@@ -444,19 +467,25 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             $samples.Add([pscustomobject]@{
                 condition = $Condition; repeat = $Repeat; time_utc = $sampleAt.ToString('o')
                 artifact_sha256 = if ($Condition -eq 'with-umce') { $artifactSha256 } else { $null }
-                players_observed = $observedPlayers; pigs_in_seed_world = $entityCounts.pigs; villagers_in_seed_world = $entityCounts.villagers
+                players_observed = $observedPlayers; pigs_in_seed_world = $entityCounts.pigs; villagers_in_seed_world = $entityCounts.villagers; tnt_in_seed_world = $entityCounts.tnt
+                hopper_rows = $HopperRows; redstone_clock_pairs = $RedstoneClockPairs; idle_clients = [bool]$IdleClients
+                save_all_interval_seconds = $SaveAllIntervalSeconds
                 tick_mean_ms = if ($meanMatch.Success) { [double]::Parse($meanMatch.Groups[1].Value.Replace(',', '.'), $culture) } else { $null }
                 tick_p50_ms = if ($p50Match.Success) { [double]::Parse($p50Match.Groups[1].Value.Replace(',', '.'), $culture) } else { $null }
                 tick_p95_ms = if ($p95Match.Success) { [double]::Parse($p95Match.Groups[1].Value.Replace(',', '.'), $culture) } else { $null }
                 tick_p99_ms = if ($p99Match.Success) { [double]::Parse($p99Match.Groups[1].Value.Replace(',', '.'), $culture) } else { $null }
                 tick_sample_count = if ($countMatch.Success) { [int]$countMatch.Groups[1].Value } else { $null }
-                process_cpu_percent_one_core = (($cpu - $previousCpu) / $wall) * 100.0
+                sample_cpu_percent_one_core = (($cpu - $previousCpu) / $wall) * 100.0
+                process_cpu_percent_one_core = $null
                 working_set_bytes = $server.Process.WorkingSet64
                 response = $response
             })
             $previousCpu = $cpu
             $previousAt = $now
         }
+        $measurementDuration = [Math]::Max(1.0, ([DateTimeOffset]::UtcNow - $measurementStartedAt).TotalMilliseconds)
+        $runCpuPercent = (($server.Process.TotalProcessorTime.TotalMilliseconds - $measurementStartedCpu) / $measurementDuration) * 100.0
+        foreach ($sample in $samples) { $sample.process_cpu_percent_one_core = $runCpuPercent }
         if ($Condition -eq 'with-umce') { Send-Command $server 'umce status' }
         Wait-Server $server 1000
         $samples
@@ -479,7 +508,7 @@ function Get-StandardDeviation([double[]]$Values) {
     return [Math]::Sqrt($sumSquares / ($Values.Count - 1))
 }
 
-# Create one immutable world with preloaded chunks, villagers, pigs, hoppers and redstone.
+# Create one immutable world with the selected stress features.
 if (Test-Path -LiteralPath $seedRoot) { Remove-Item -LiteralPath $seedRoot -Recurse -Force }
 New-Item -ItemType Directory -Force $seedRoot | Out-Null
 Copy-Item -Path (Join-Path $templateRoot '*') -Destination $seedRoot -Recurse -Force
@@ -501,8 +530,8 @@ try {
 } finally { Stop-Server $setupServer }
 if (-not (Test-Path -LiteralPath (Join-Path $worldPath 'level.dat'))) { throw 'Stress setup did not save a Minecraft world.' }
 $entityCounts = (& $python $entityCounter $worldPath | ConvertFrom-Json)
-if ($LASTEXITCODE -ne 0 -or $entityCounts.pigs -lt $Entities -or $entityCounts.villagers -lt $Villagers) {
-    throw "Saved workload is short: pigs $($entityCounts.pigs)/$Entities, villagers $($entityCounts.villagers)/$Villagers."
+if ($LASTEXITCODE -ne 0 -or $entityCounts.pigs -lt $Entities -or $entityCounts.villagers -lt $Villagers -or $entityCounts.tnt -lt $TntCount) {
+    throw "Saved workload is short: pigs $($entityCounts.pigs)/$Entities, villagers $($entityCounts.villagers)/$Villagers, TNT $($entityCounts.tnt)/$TntCount."
 }
 $seedChunkCounts = (& $python (Join-Path $PSScriptRoot 'count-minecraft-chunks.py') $worldPath | ConvertFrom-Json)
 if ($LASTEXITCODE -ne 0) { throw 'Could not count the preloaded overworld chunks.' }
@@ -538,18 +567,25 @@ $lines.Add('# UMCE Minecraft 1.21.1 stress comparison')
 $lines.Add('')
 $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
 $lines.Add('')
-$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers verified from saved Anvil entity data, 256 filled hoppers with blocked destination chests, 16 paired observer blocks, 8-chunk view/simulation distances, and clients continuously walking into new chunks. A 16 x 16 chunk region is force-loaded and remains active while clients explore beyond it. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
+$movement = if ($IdleClients) { 'idle clients' } else { 'clients walking into new chunks' }
+$saveLoad = if ($SaveAllIntervalSeconds -gt 0) { "save-all flush every $SaveAllIntervalSeconds seconds" } else { 'no forced periodic saves' }
+$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers and $($entityCounts.tnt) primed TNT verified from saved Anvil entity data, $($HopperRows * 16) filled hoppers in $HopperRows rows with blocked destination chests, $RedstoneClockPairs paired observer clocks, 8-chunk view/simulation distances, $movement, and $saveLoad. A 16 x 16 chunk region is force-loaded. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
+$lines.Add("JVM args: -Xms$InitialHeap -Xmx$MaximumHeap. TNT fuse during the measured interval: $TntFuseTicks ticks. Baseline and UMCE alternate first position by repeat number.")
 $lines.Add('')
-$lines.Add('| Condition | Samples | Mean tick ms | Mean P95 ms | Mean P99 ms | Mean process CPU (% of one core) | Mean working set MiB |')
-$lines.Add('|---|---:|---:|---:|---:|---:|---:|')
+$lines.Add('| Condition | Samples | Mean rolling MSPT | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | Max rolling MSPT | MSPT stddev | CPU (% one core) | Working set MiB |')
+$lines.Add('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
 foreach ($condition in @('without-umce', 'with-umce')) {
     $rows = @($all | Where-Object { $_.condition -eq $condition -and $null -ne $_.tick_mean_ms })
     $mean = ($rows | Measure-Object tick_mean_ms -Average).Average
+    $median = Get-Median ([double[]]@($rows | ForEach-Object { $_.tick_mean_ms }))
+    $p50 = ($rows | Measure-Object tick_p50_ms -Average).Average
     $p95 = ($rows | Measure-Object tick_p95_ms -Average).Average
     $p99 = ($rows | Measure-Object tick_p99_ms -Average).Average
+    $max = ($rows | Measure-Object tick_mean_ms -Maximum).Maximum
+    $stddev = Get-StandardDeviation ([double[]]@($rows | ForEach-Object { $_.tick_mean_ms }))
     $cpu = ($rows | Measure-Object process_cpu_percent_one_core -Average).Average
     $memory = (($rows | Measure-Object working_set_bytes -Average).Average / 1MB)
-    $lines.Add("| $condition | $($rows.Count) | $($mean.ToString('F3', $culture)) | $($p95.ToString('F3', $culture)) | $($p99.ToString('F3', $culture)) | $($cpu.ToString('F1', $culture)) | $($memory.ToString('F1', $culture)) |")
+    $lines.Add("| $condition | $($rows.Count) | $($mean.ToString('F3', $culture)) | $($median.ToString('F3', $culture)) | $($p50.ToString('F3', $culture)) | $($p95.ToString('F3', $culture)) | $($p99.ToString('F3', $culture)) | $($max.ToString('F3', $culture)) | $($stddev.ToString('F3', $culture)) | $($cpu.ToString('F1', $culture)) | $($memory.ToString('F1', $culture)) |")
 }
 $runMedians = @{}
 $lines.Add('')

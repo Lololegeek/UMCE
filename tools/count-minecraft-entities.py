@@ -94,7 +94,8 @@ def main() -> int:
     counts = entity_counts(args.world)
     pigs = counts["minecraft:pig"]
     villagers = counts["minecraft:villager"]
-    print(json.dumps({"pigs": pigs, "villagers": villagers, "total": sum(counts.values())}))
+    tnt = counts["minecraft:tnt"]
+    print(json.dumps({"pigs": pigs, "villagers": villagers, "tnt": tnt, "total": sum(counts.values())}))
     return 0
 
 

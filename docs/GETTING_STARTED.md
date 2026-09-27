@@ -90,3 +90,16 @@ working sets were 1,539 MiB and 1,527 MiB; live heap histograms were 401 MiB
 and 484 MiB. These are single, variable-world snapshots, not a controlled
 memory win for UMCE. The server heap reported under 1 GiB after GC in both
 runs. See `benchmark-results/2026-09-26-memory-4g.md` for details.
+
+To run paired isolated and mixed stress cases (entities, villagers/AI, hoppers,
+redstone, world generation, chunk saves, idle network load, collisions, 100 /
+1,000 / 10,000 TNT explosions, and the mixed workload), use:
+
+```powershell
+./tools/run-fabric-stress-matrix.ps1 -MeasureSeconds 30 -Repeats 2
+```
+
+The matrix covers the repository's current Fabric 1.21.1 adapter only. Its
+per-case reports include tick percentiles, CPU, working set, and generated
+chunks; allocation rate, GC pause totals, and network byte counters are not
+available in this harness.

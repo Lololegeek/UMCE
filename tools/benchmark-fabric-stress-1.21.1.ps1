@@ -17,6 +17,7 @@ param(
     [ValidatePattern('^[1-9][0-9]*[kKmMgGtT]$')][string]$MaximumHeap = '8G',
     [string]$UmceJar = '',
     [string]$ResultTag = '',
+    [switch]$EnableTickProfiler,
     [switch]$ProfileOnly,
     [string]$ProfilerJar = '',
     [switch]$HeapSnapshotOnly,
@@ -216,7 +217,7 @@ namespace UMCE {
 '@
 }
 
-function Start-Server([string]$Directory, [string]$Label) {
+function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickProfiler = $false) {
     $log = Join-Path $outputRoot "$Label.log"
     $stderrLog = Join-Path $outputRoot "$Label-stderr.log"
     Set-Content -LiteralPath $log -Encoding utf8 -Value ''
@@ -224,6 +225,9 @@ function Start-Server([string]$Directory, [string]$Label) {
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $java
     $info.Arguments = "-Xms$InitialHeap -Xmx$MaximumHeap -jar fabric-server-launch.jar nogui"
+    if ($EnableUmceTickProfiler) {
+        $info.Arguments = "-Dumce.tickProfiler.enabled=true " + $info.Arguments
+    }
     $info.WorkingDirectory = $Directory
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -360,7 +364,8 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     Copy-Item -Path (Join-Path $WorldPath '*') -Destination $destinationWorld -Recurse -Force
     if ($Condition -eq 'with-umce') { Copy-Item -LiteralPath $artifact -Destination (Join-Path $directory 'mods\umce.jar') -Force }
 
-    $server = Start-Server $directory $label
+    $enableProfilerForRun = $Condition -eq 'with-umce' -and $EnableTickProfiler.IsPresent
+    $server = Start-Server $directory $label $enableProfilerForRun
     $clients = $null
     try {
         $clients = Start-StressClients $label
@@ -467,6 +472,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             $samples.Add([pscustomobject]@{
                 condition = $Condition; repeat = $Repeat; time_utc = $sampleAt.ToString('o')
                 artifact_sha256 = if ($Condition -eq 'with-umce') { $artifactSha256 } else { $null }
+                umce_tick_profiler_enabled = $enableProfilerForRun
                 players_observed = $observedPlayers; pigs_in_seed_world = $entityCounts.pigs; villagers_in_seed_world = $entityCounts.villagers; tnt_in_seed_world = $entityCounts.tnt
                 hopper_rows = $HopperRows; redstone_clock_pairs = $RedstoneClockPairs; idle_clients = [bool]$IdleClients
                 save_all_interval_seconds = $SaveAllIntervalSeconds
@@ -569,7 +575,8 @@ $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
 $lines.Add('')
 $movement = if ($IdleClients) { 'idle clients' } else { 'clients walking into new chunks' }
 $saveLoad = if ($SaveAllIntervalSeconds -gt 0) { "save-all flush every $SaveAllIntervalSeconds seconds" } else { 'no forced periodic saves' }
-$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers and $($entityCounts.tnt) primed TNT verified from saved Anvil entity data, $($HopperRows * 16) filled hoppers in $HopperRows rows with blocked destination chests, $RedstoneClockPairs paired observer clocks, 8-chunk view/simulation distances, $movement, and $saveLoad. A 16 x 16 chunk region is force-loaded. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
+$tickProfilerMode = if ($EnableTickProfiler) { 'enabled by -Dumce.tickProfiler.enabled=true for UMCE runs' } else { 'disabled for UMCE runs (default)' }
+$lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). UMCE tick profiler: $tickProfilerMode. Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers and $($entityCounts.tnt) primed TNT verified from saved Anvil entity data, $($HopperRows * 16) filled hoppers in $HopperRows rows with blocked destination chests, $RedstoneClockPairs paired observer clocks, 8-chunk view/simulation distances, $movement, and $saveLoad. A 16 x 16 chunk region is force-loaded. Each run warms up 20 seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
 $lines.Add("JVM args: -Xms$InitialHeap -Xmx$MaximumHeap. TNT fuse during the measured interval: $TntFuseTicks ticks. Baseline and UMCE alternate first position by repeat number.")
 $lines.Add('')
 $lines.Add('| Condition | Samples | Mean rolling MSPT | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | Max rolling MSPT | MSPT stddev | CPU (% one core) | Working set MiB |')
@@ -628,6 +635,6 @@ $lines.Add("Saved overworld chunk records: $($seedChunkCounts.saved_overworld_ch
 $csvRelative = [System.IO.Path]::GetRelativePath($root, $csv).Replace('\', '/')
 $lines.Add("Per-window data is in [$csvRelative]($csvRelative); only completed /tick query responses are included in the summary. The adjacent run logs show each connected bot, observed online player count, and server overload messages. Entity totals are verified from the generated world files before either test condition starts.")
 $lines.Add('')
-$lines.Add("UMCE currently records timings but enables no gameplay optimizations. Conditions alternate order across pairs ($Repeats pair(s)); both start from copies of the same saved seed world. Differences are descriptive measurements of diagnostics overhead, not optimization gains. At least three valid pairs are recommended before interpreting small differences.")
+$lines.Add("UMCE currently registers no gameplay optimizations. Tick profiling is opt-in and is $tickProfilerMode. Conditions alternate order across pairs ($Repeats pair(s)); both start from copies of the same saved seed world. Differences are descriptive measurements, not optimization gains. At least three valid pairs are recommended before interpreting small differences.")
 $lines | Set-Content -LiteralPath $report -Encoding utf8
 Write-Output "Stress comparison saved: $report"

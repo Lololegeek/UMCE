@@ -4,6 +4,7 @@ param(
     [ValidateRange(1, 10)][int]$Repeats = 2,
     [string]$InitialHeap = '1G',
     [string]$MaximumHeap = '4G',
+    [switch]$EnableTickProfiler,
     [string[]]$Only = @()
 )
 
@@ -34,10 +35,12 @@ if ($Only.Count -gt 0) {
 $benchmarkScript = Join-Path $PSScriptRoot 'benchmark-fabric-stress-1.21.1.ps1'
 $outputRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'benchmark-results'
 $stamp = Get-Date -Format 'yyyy-MM-dd'
+$profilerMode = if ($EnableTickProfiler) { 'on' } else { 'off' }
 $rows = [Collections.Generic.List[object]]::new()
 
 foreach ($scenario in $matrix) {
-    Write-Host "=== $($scenario.Name): $Repeats paired run(s), $MeasureSeconds seconds per condition ==="
+    Write-Host "=== $($scenario.Name), tick profiler ${profilerMode}: $Repeats paired run(s), $MeasureSeconds seconds per condition ==="
+    $scenarioResultTag = "$($scenario.Name)-profiler-$profilerMode"
     $parameters = @{
         Players = $scenario.Players
         Entities = $scenario.Entities
@@ -51,19 +54,20 @@ foreach ($scenario in $matrix) {
         Repeats = $Repeats
         InitialHeap = $InitialHeap
         MaximumHeap = $MaximumHeap
-        ResultTag = $scenario.Name
+        ResultTag = $scenarioResultTag
+        EnableTickProfiler = $EnableTickProfiler
     }
     try {
         & $benchmarkScript @parameters
-        $rows.Add([pscustomobject]@{ Scenario = $scenario.Name; Status = 'completed'; Report = "$stamp-1.21.1-stress-$($scenario.Name)-comparison.md" })
+        $rows.Add([pscustomobject]@{ Scenario = $scenario.Name; Status = 'completed'; Report = "$stamp-1.21.1-stress-$scenarioResultTag-comparison.md" })
     } catch {
-        $rows.Add([pscustomobject]@{ Scenario = $scenario.Name; Status = "failed: $($_.Exception.Message)"; Report = "$stamp-1.21.1-stress-$($scenario.Name)-comparison.md" })
+        $rows.Add([pscustomobject]@{ Scenario = $scenario.Name; Status = "failed: $($_.Exception.Message)"; Report = "$stamp-1.21.1-stress-$scenarioResultTag-comparison.md" })
         Write-Warning "Scenario $($scenario.Name) failed; continuing. $($_.Exception.Message)"
     }
 }
 
 $reportName = if ($Only.Count -gt 0) {
-    "$stamp-1.21.1-stress-matrix-selected.md"
+    "$stamp-1.21.1-stress-matrix-selected-profiler-$profilerMode.md"
 } else {
     "$stamp-1.21.1-stress-matrix.md"
 }
@@ -72,7 +76,8 @@ $lines = [Collections.Generic.List[string]]::new()
 $lines.Add('# UMCE Fabric 1.21.1 stress matrix')
 $lines.Add('')
 $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
-$lines.Add("Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Warmup: 20 seconds per server. Measured interval: $MeasureSeconds seconds per condition. Repeats: $Repeats paired run(s), alternating run order. Each scenario runs without UMCE and with UMCE; Fabric API, Java, server properties, seed, clients and scenario are otherwise held constant.")
+$tickProfilerMode = if ($EnableTickProfiler) { 'enabled for UMCE runs' } else { 'disabled for UMCE runs (default)' }
+$lines.Add("Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Warmup: 20 seconds per server. Measured interval: $MeasureSeconds seconds per condition. Repeats: $Repeats paired run(s), alternating run order. Each scenario runs without UMCE and with UMCE; Fabric API, Java, server properties, seed, clients and scenario are otherwise held constant. Tick profiler: $tickProfilerMode.")
 $lines.Add('')
 $lines.Add('| Scenario | Status | Per-scenario report |')
 $lines.Add('|---|---|---|')

@@ -38,9 +38,12 @@ benchmark and does not claim a speedup.
 ## Minecraft 1.21.1 Fabric adapter
 
 The server artifact targets Minecraft 1.21.1 with Fabric Loader 0.16.14 and
-Fabric API 0.116.17+1.21.1. It records server tick durations and exposes a
-permission-gated `/umce status` command. It does not change tick behavior or
-enable an optimization patch.
+Fabric API 0.116.17+1.21.1. It exposes a permission-gated `/umce status`
+command. Tick profiling is disabled by default so the adapter adds no tick
+hooks, clock reads, or profiler lock acquisition during normal server ticks.
+Enable the diagnostic profiler only when needed by adding
+`-Dumce.tickProfiler.enabled=true` to the server JVM arguments. It records tick
+durations but does not change tick behavior or enable an optimization patch.
 
 Run the paired server stress workload from PowerShell:
 
@@ -98,6 +101,11 @@ redstone, world generation, chunk saves, idle network load, collisions, 100 /
 ```powershell
 ./tools/run-fabric-stress-matrix.ps1 -MeasureSeconds 30 -Repeats 2
 ```
+
+The matrix leaves tick profiling disabled by default. To measure its
+instrumentation overhead separately, pass `-EnableTickProfiler`; the selected
+matrix report and per-scenario files include `profiler-on` or `profiler-off` in
+their names. The JVM property is applied only to the UMCE condition.
 
 The matrix covers the repository's current Fabric 1.21.1 adapter only. Its
 per-case reports include tick percentiles, CPU, working set, and generated

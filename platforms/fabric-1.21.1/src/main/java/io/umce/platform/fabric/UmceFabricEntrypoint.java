@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 public final class UmceFabricEntrypoint implements ModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("UMCE");
+    private static final boolean TICK_PROFILING_ENABLED = Boolean.getBoolean("umce.tickProfiler.enabled");
     private static final TickProfiler TICK_PROFILER = new TickProfiler(3_600);
     private static volatile long tickStartNanos;
 
@@ -28,13 +29,18 @@ public final class UmceFabricEntrypoint implements ModInitializer {
         LOGGER.info("UMCE Fabric adapter loaded for Minecraft 1.21.1 (Fabric Loader {})", loaderVersion);
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> logServerStarted(server, loaderVersion));
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> logFinalProfile());
-        ServerTickEvents.START_SERVER_TICK.register(server -> tickStartNanos = System.nanoTime());
-        ServerTickEvents.END_SERVER_TICK.register(server -> {
-            long started = tickStartNanos;
-            tickStartNanos = 0L;
-            if (started > 0L) TICK_PROFILER.recordTick(Math.max(0L, System.nanoTime() - started));
-        });
+        if (TICK_PROFILING_ENABLED) {
+            LOGGER.info("UMCE tick profiler enabled by -Dumce.tickProfiler.enabled=true");
+            ServerLifecycleEvents.SERVER_STOPPING.register(server -> logFinalProfile());
+            ServerTickEvents.START_SERVER_TICK.register(server -> tickStartNanos = System.nanoTime());
+            ServerTickEvents.END_SERVER_TICK.register(server -> {
+                long started = tickStartNanos;
+                tickStartNanos = 0L;
+                if (started > 0L) TICK_PROFILER.recordTick(Math.max(0L, System.nanoTime() - started));
+            });
+        } else {
+            LOGGER.info("UMCE tick profiler disabled; enable with -Dumce.tickProfiler.enabled=true");
+        }
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(CommandManager.literal("umce")
@@ -54,6 +60,14 @@ public final class UmceFabricEntrypoint implements ModInitializer {
     }
 
     private static int sendStatus(MinecraftServer server, ServerPlayerEntity player) {
+        if (!TICK_PROFILING_ENABLED) {
+            String message = "UMCE | MC 1.21.1 | Fabric | online players "
+                    + server.getPlayerManager().getCurrentPlayerCount()
+                    + " | tick profiler disabled (set -Dumce.tickProfiler.enabled=true to enable)";
+            if (player != null) player.sendMessage(Text.literal(message), false);
+            else LOGGER.info(message);
+            return 1;
+        }
         ProfileSnapshot profile = TICK_PROFILER.snapshot();
         String message = String.format(java.util.Locale.ROOT,
                 "UMCE | MC 1.21.1 | Fabric | online players %d | tick samples %d | mean %.3f ms | p95 %.3f ms | p99 %.3f ms",

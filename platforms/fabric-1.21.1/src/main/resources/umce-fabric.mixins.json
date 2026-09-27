@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "io.umce.platform.fabric.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "SectionedEntityCacheMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

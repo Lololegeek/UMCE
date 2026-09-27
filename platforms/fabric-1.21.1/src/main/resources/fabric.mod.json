@@ -3,12 +3,13 @@
   "id": "umce_fabric_1_21_1",
   "version": "${version}",
   "name": "UMCE Fabric Server Adapter",
-  "description": "Server diagnostics and tick profiling adapter for Minecraft 1.21.1.",
+  "description": "Server diagnostics and opt-in optimization patches for Minecraft 1.21.1.",
   "license": ["GPL-3.0-only"],
   "environment": "server",
   "entrypoints": {
     "main": ["io.umce.platform.fabric.UmceFabricEntrypoint"]
   },
+  "mixins": ["umce-fabric.mixins.json"],
   "depends": {
     "fabricloader": ">=0.16.14",
     "fabric-api": "*",

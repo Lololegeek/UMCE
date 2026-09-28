@@ -56,6 +56,8 @@ $scenarios = @(
     @{ Name = 'tnt-quick-large'; Players = 0; Entities = 0; Villagers = 0; HopperRows = 0; RedstoneClockPairs = 0; TntCount = 2000; IdleClients = $true; SaveAllIntervalSeconds = 0; Patch = $false },
     @{ Name = 'mixed'; Players = 20; Entities = 2000; Villagers = 150; HopperRows = 4; RedstoneClockPairs = 2; TntCount = 0; IdleClients = $false; SaveAllIntervalSeconds = 0; Patch = $true }
 )
+$scenarioOrder = @('entity', 'collision', 'network', 'mixed', 'worldgen', 'chunk-io', 'ai-mix', 'villagers', 'hoppers', 'redstone', 'tnt-1000', 'tnt-quick-large', 'tnt-100')
+$scenarios = @($scenarioOrder | ForEach-Object { $name = $_; $scenarios | Where-Object Name -eq $name })
 
 function Quote-ProcessArgument([string]$Value) {
     return '"' + $Value.Replace('"', '\"') + '"'
@@ -70,9 +72,18 @@ function Get-Median([double[]]$Values) {
 }
 
 function Get-Mean($Rows, [string]$Property) {
-    $values = @($Rows | ForEach-Object { $value = $_.$Property; if ($null -ne $value -and "$value" -ne '') { [double]$value } })
+    $values = @($Rows | ForEach-Object { ConvertTo-BenchNumber $_.$Property })
     if ($values.Count -eq 0) { return [double]::NaN }
     return ($values | Measure-Object -Average).Average
+}
+
+function ConvertTo-BenchNumber([object]$Value) {
+    if ($null -eq $Value -or "$Value".Trim() -eq '') { return [double]::NaN }
+    $normalized = "$Value".Trim().Replace(',', '.')
+    $parsed = 0.0
+    if ([double]::TryParse($normalized, [Globalization.NumberStyles]::Float,
+            [Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) { return $parsed }
+    return [double]::NaN
 }
 
 function Format-Number([double]$Value, [int]$Digits = 2) {
@@ -84,8 +95,8 @@ function New-PartialRow($Scenario, [string]$Workload, [string]$CsvPath, [string]
     $samples = if (Test-Path -LiteralPath $CsvPath) { @(Import-Csv -LiteralPath $CsvPath) } else { @() }
     $base = @($samples | Where-Object condition -eq 'without-umce')
     $with = @($samples | Where-Object condition -eq 'with-umce')
-    $baseMspt = Get-Median ([double[]]@($base | ForEach-Object { if ($_.tick_mean_ms) { [double]$_.tick_mean_ms } }))
-    $withMspt = Get-Median ([double[]]@($with | ForEach-Object { if ($_.tick_mean_ms) { [double]$_.tick_mean_ms } }))
+    $baseMspt = Get-Median ([double[]]@($base | ForEach-Object { ConvertTo-BenchNumber $_.tick_mean_ms }))
+    $withMspt = Get-Median ([double[]]@($with | ForEach-Object { ConvertTo-BenchNumber $_.tick_mean_ms }))
     $delta = if ($baseMspt -gt 0 -and -not [double]::IsNaN($withMspt)) { (($withMspt - $baseMspt) / $baseMspt) * 100.0 } else { [double]::NaN }
     $status = if ($samples.Count -gt 0) { "partial; $($base.Count) baseline / $($with.Count) UMCE samples" } else { $FallbackStatus }
     return [pscustomobject]@{
@@ -137,7 +148,7 @@ for ($index = 0; $index -lt $scenarios.Count; $index++) {
         break
     }
 
-    $scenarioBudget = [Math]::Min(75, [Math]::Max(15, [Math]::Floor($remaining / [Math]::Min(8, $scenariosLeft))))
+    $scenarioBudget = [Math]::Min(110, [Math]::Max(20, [Math]::Floor($remaining / [Math]::Min(5, $scenariosLeft))))
     $resultTag = "quick-$tag-$($scenario.Name)"
     $csvPath = Join-Path $outputRoot "$stamp-1.21.1-stress-$resultTag-samples.csv"
     $outLog = Join-Path $outputRoot "$stamp-1.21.1-stress-$resultTag-run.log"
@@ -206,8 +217,8 @@ for ($index = 0; $index -lt $scenarios.Count; $index++) {
     $samples = @(Import-Csv -LiteralPath $csvPath)
     $base = @($samples | Where-Object condition -eq 'without-umce')
     $with = @($samples | Where-Object condition -eq 'with-umce')
-    $baseMspt = Get-Median ([double[]]@($base | ForEach-Object { [double]$_.tick_mean_ms }))
-    $withMspt = Get-Median ([double[]]@($with | ForEach-Object { [double]$_.tick_mean_ms }))
+    $baseMspt = Get-Median ([double[]]@($base | ForEach-Object { ConvertTo-BenchNumber $_.tick_mean_ms }))
+    $withMspt = Get-Median ([double[]]@($with | ForEach-Object { ConvertTo-BenchNumber $_.tick_mean_ms }))
     $delta = if ($baseMspt -gt 0 -and -not [double]::IsNaN($withMspt)) { (($withMspt - $baseMspt) / $baseMspt) * 100.0 } else { [double]::NaN }
     $condition = if ($scenario.Patch) { 'UMCE + small-box-section-probe' } else { 'UMCE SAFE (no gameplay patch)' }
     $rows[$index] = [pscustomobject]@{

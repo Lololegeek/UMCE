@@ -128,4 +128,6 @@ are deliberately scaled down for speed; this screen is not a replacement for
 the full matrix above. The summary is refreshed while the run proceeds and raw
 samples are checkpointed after each completed condition. If a scenario cannot
 finish within its allotted share, the report marks it as timed out or not run
-instead of extending the limit.
+instead of extending the limit. It prioritizes entity, collision, network,
+mixed, world-generation, and chunk-I/O comparisons, then spends remaining time
+on the other workload families.

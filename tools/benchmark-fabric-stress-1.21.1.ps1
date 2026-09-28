@@ -51,6 +51,7 @@ $clientScript = Join-Path $PSScriptRoot 'minecraft-stress-clients.cjs'
 $entityCounter = Join-Path $PSScriptRoot 'count-minecraft-entities.py'
 $clientDependencyRoot = Join-Path $benchmarkRoot 'client-deps'
 $entitySpawnCount = if ($Entities -gt 0) { $Entities + [Math]::Max(25, [Math]::Ceiling($Entities * 0.01)) } else { 0 }
+$script:checkpointSamples = [Collections.Generic.List[object]]::new()
 $culture = [Globalization.CultureInfo]::InvariantCulture
 if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a-z0-9][a-z0-9_-]{0,39}$') {
     throw 'ResultTag must contain 1-40 lowercase letters, numbers, underscores, or hyphens.'
@@ -531,6 +532,8 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         $measurementDuration = [Math]::Max(1.0, ([DateTimeOffset]::UtcNow - $measurementStartedAt).TotalMilliseconds)
         $runCpuPercent = (($server.Process.TotalProcessorTime.TotalMilliseconds - $measurementStartedCpu) / $measurementDuration) * 100.0
         foreach ($sample in $samples) { $sample.process_cpu_percent_one_core = $runCpuPercent }
+        foreach ($sample in $samples) { $script:checkpointSamples.Add($sample) }
+        Save-PartialSamples $script:checkpointSamples
         if ($usesUmce) { Send-Command $server 'umce status' }
         if (-not $QuickStartup) { Wait-Server $server 1000 }
         $samples

@@ -21,6 +21,7 @@ param(
     [string]$ResultTag = '',
     [switch]$EnableTickProfiler,
     [switch]$EnableSmallBoxSectionProbe,
+    [switch]$EnableEntityQueryProfiler,
     [switch]$PatchComparison,
     [switch]$ProfileOnly,
     [switch]$ProfilePatchEnabled,
@@ -247,7 +248,8 @@ namespace UMCE {
 }
 
 function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickProfiler = $false,
-                      [bool]$EnableSmallBoxSectionProbe = $false) {
+                      [bool]$EnableSmallBoxSectionProbe = $false, [bool]$Passive = $false,
+                      [bool]$EnableEntityQueryProfiler = $false) {
     $log = Join-Path $outputRoot "$Label.log"
     $stderrLog = Join-Path $outputRoot "$Label-stderr.log"
     Set-Content -LiteralPath $log -Encoding utf8 -Value ''
@@ -261,6 +263,8 @@ function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickP
     if ($EnableSmallBoxSectionProbe) {
         $info.Arguments = "-Dumce.mode=optimized -Dumce.patch.small-box-section-probe.enabled=true " + $info.Arguments
     }
+    if ($Passive) { $info.Arguments = "-Dumce.passive=true " + $info.Arguments }
+    if ($EnableEntityQueryProfiler) { $info.Arguments = "-Dumce.entityQueryProfiler.enabled=true " + $info.Arguments }
     $info.WorkingDirectory = $Directory
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -385,6 +389,7 @@ function Stop-Server($Server) {
 
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $usesUmce = $Condition -ne 'without-umce'
+    $passive = $Condition -eq 'umce-passive'
     $enableSmallBoxSectionProbe = $usesUmce -and ($Condition -eq 'patch-enabled' -or ($ProfileOnly -and $ProfilePatchEnabled) -or $EnableSmallBoxSectionProbe.IsPresent)
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
@@ -400,7 +405,8 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     if ($usesUmce) { Copy-Item -LiteralPath $artifact -Destination (Join-Path $directory 'mods\umce.jar') -Force }
 
     $enableProfilerForRun = $usesUmce -and $EnableTickProfiler.IsPresent
-    $server = Start-Server $directory $label $enableProfilerForRun $enableSmallBoxSectionProbe
+    $enableQueryProfilerForRun = $usesUmce -and $EnableEntityQueryProfiler.IsPresent -and -not $passive
+    $server = Start-Server $directory $label $enableProfilerForRun $enableSmallBoxSectionProbe $passive $enableQueryProfilerForRun
     $clients = $null
     try {
         $clients = Start-StressClients $label
@@ -602,13 +608,9 @@ if ($HeapSnapshotOnly) {
 } elseif ($ProfileOnly) {
     Measure-Run $(if ($ProfilePatchEnabled) { 'patch-enabled' } else { 'with-umce' }) 1 $worldPath | Out-Null
 } elseif ($PatchComparison) {
+    $comparisonConditions = @('without-umce', 'umce-passive', 'patch-enabled')
     for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
-        switch (($repeat - 1) % 4) {
-            0 { $order = @('without-umce', 'diagnostics-only', 'patch-enabled') }
-            1 { $order = @('patch-enabled', 'diagnostics-only', 'without-umce') }
-            2 { $order = @('diagnostics-only', 'patch-enabled', 'without-umce') }
-            default { $order = @('without-umce', 'patch-enabled', 'diagnostics-only') }
-        }
+        $order = if ($repeat % 2 -eq 1) { $comparisonConditions } else { @($comparisonConditions[($comparisonConditions.Count - 1)..0]) }
         foreach ($condition in $order) {
             foreach ($sample in (Measure-Run $condition $repeat $worldPath)) { $all.Add($sample) }
             Save-PartialSamples $all
@@ -633,12 +635,12 @@ if ($PatchComparison) {
     $lines.Add('# UMCE Fabric 1.21.1 patch ablation')
     $lines.Add('')
     $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
-    $lines.Add("Patch: ``small-box-section-probe``; baseline has no UMCE, diagnostics-only loads UMCE in SAFE mode, and patch-enabled uses OPTIMIZED mode with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup $WarmupSeconds s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
+    $lines.Add("Patch: ``small-box-section-probe``; baseline has no UMCE, umce-passive loads UMCE with all gameplay Mixins omitted, and patch-enabled loads UMCE with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup $WarmupSeconds s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
     $lines.Add("UMCE artifact SHA-256: $artifactSha256")
     $lines.Add('')
     $lines.Add('| Condition | Windows | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | CPU (% one core) | Working set MiB |')
     $lines.Add('|---|---:|---:|---:|---:|---:|---:|---:|')
-    foreach ($condition in @('without-umce', 'diagnostics-only', 'patch-enabled')) {
+    foreach ($condition in @('without-umce', 'umce-passive', 'patch-enabled')) {
         $rows = @($all | Where-Object { $_.condition -eq $condition -and $null -ne $_.tick_mean_ms })
         $median = Get-Median ([double[]]@($rows | ForEach-Object { $_.tick_mean_ms }))
         $p50 = ($rows | Measure-Object tick_p50_ms -Average).Average
@@ -651,7 +653,7 @@ if ($PatchComparison) {
     $lines.Add('')
     $lines.Add('## Per-cycle paired medians')
     $lines.Add('')
-    $lines.Add('| Cycle | Run order | Baseline MSPT | Diagnostics MSPT | Patch MSPT | Diagnostics vs baseline | Patch vs diagnostics |')
+    $lines.Add('| Cycle | Run order | Baseline MSPT | Passive MSPT | Patch MSPT | Passive vs baseline | Patch vs passive |')
     $lines.Add('|---:|---|---:|---:|---:|---:|---:|')
     $diagnosticsChanges = [Collections.Generic.List[double]]::new()
     $patchChanges = [Collections.Generic.List[double]]::new()
@@ -659,12 +661,12 @@ if ($PatchComparison) {
     for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
         $pair = @($all | Where-Object { $_.repeat -eq $repeat })
         $values = @{}
-        foreach ($condition in @('without-umce', 'diagnostics-only', 'patch-enabled')) {
+        foreach ($condition in @('without-umce', 'umce-passive', 'patch-enabled')) {
             $rows = @($pair | Where-Object { $_.condition -eq $condition -and $null -ne $_.tick_mean_ms })
             $values[$condition] = Get-Median ([double[]]@($rows | ForEach-Object { $_.tick_mean_ms }))
         }
         $baseline = $values['without-umce']
-        $diagnostics = $values['diagnostics-only']
+        $diagnostics = $values['umce-passive']
         $patchValue = $values['patch-enabled']
         if ($baseline -gt 0 -and $diagnostics -gt 0 -and $patchValue -gt 0) {
             $diagnosticsChange = (($diagnostics - $baseline) / $baseline) * 100.0
@@ -687,7 +689,7 @@ if ($PatchComparison) {
     $patchVsBaselineMedian = Get-Median ([double[]]$patchVsBaselineChanges.ToArray())
     $patchFasterCycles = @($patchChanges | Where-Object { $_ -lt 0 }).Count
     $lines.Add('')
-    $lines.Add("Median diagnostics-only change vs baseline: $($diagnosticsMedian.ToString('F2', $culture))% (SD $($diagnosticsSd.ToString('F2', $culture)) pp). Median patch change vs diagnostics-only: $($patchMedian.ToString('F2', $culture))% (SD $($patchSd.ToString('F2', $culture)) pp). Patch vs baseline: $($patchVsBaselineMedian.ToString('F2', $culture))%. Positive deltas are slower. Valid paired cycles: $($patchChanges.Count)/$Repeats.")
+    $lines.Add("Median passive UMCE change vs baseline: $($diagnosticsMedian.ToString('F2', $culture))% (SD $($diagnosticsSd.ToString('F2', $culture)) pp). Median patch change vs passive UMCE: $($patchMedian.ToString('F2', $culture))% (SD $($patchSd.ToString('F2', $culture)) pp). Patch vs baseline: $($patchVsBaselineMedian.ToString('F2', $culture))%. Positive deltas are slower. Valid paired cycles: $($patchChanges.Count)/$Repeats.")
     $lines.Add('')
     $csvRelative = [System.IO.Path]::GetRelativePath($root, $csv).Replace('\\', '/')
     $lines.Add("Raw rolling MSPT/P95/P99, process CPU, working set and run metadata: [$csvRelative]($csvRelative).")

@@ -1,6 +1,7 @@
 package io.umce.platform.fabric.mixin;
 
 import io.umce.platform.fabric.optimization.EntityQueryPatchRuntime;
+import io.umce.platform.fabric.optimization.EntityQueryProfiler;
 import io.umce.platform.fabric.optimization.PackedSectionCoordinateOrder;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import net.minecraft.util.function.LazyIterationConsumer;
@@ -43,6 +44,9 @@ public abstract class SectionedEntityCacheMixin<T extends EntityLike> {
                 || xCount > MAX_DIRECT_SECTION_PROBES
                 || yCount > MAX_DIRECT_SECTION_PROBES / xCount
                 || zCount > MAX_DIRECT_SECTION_PROBES / (xCount * yCount)) {
+            if (EntityQueryPatchRuntime.isProfilingEnabled()) {
+                EntityQueryProfiler.markFallback();
+            }
             return;
         }
 
@@ -62,6 +66,9 @@ public abstract class SectionedEntityCacheMixin<T extends EntityLike> {
                     }
                 }
             }
+        }
+        if (EntityQueryPatchRuntime.isProfilingEnabled()) {
+            EntityQueryProfiler.markAccelerated(xCount * yCount * zCount);
         }
         callback.cancel();
     }

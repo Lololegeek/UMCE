@@ -2,10 +2,12 @@
   "required": true,
   "minVersion": "0.8",
   "package": "io.umce.platform.fabric.mixin",
+  "plugin": "io.umce.platform.fabric.mixin.UmceMixinConfigPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "SectionedEntityCacheMixin",
-    "EntityTrackerMixin"
+    "EntityTrackerMixin",
+    "EntityQueryProfilerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

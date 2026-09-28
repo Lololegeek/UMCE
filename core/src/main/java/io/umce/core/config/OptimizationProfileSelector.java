@@ -10,8 +10,8 @@ public final class OptimizationProfileSelector {
 
     public boolean shouldEnable(OptimizationMode mode, PatchPreference preference,
                                 PatchDescriptor descriptor, HardwareProfile hardware) {
-        if (mode == null || preference == null || descriptor == null || hardware == null) {
-            throw new IllegalArgumentException("mode, preference, descriptor, and hardware must not be null");
+        if (mode == null || preference == null || descriptor == null) {
+            throw new IllegalArgumentException("mode, preference, and descriptor must not be null");
         }
         if (mode == OptimizationMode.SAFE) return false;
         if (mode == OptimizationMode.MANUAL) return preference == PatchPreference.ON;
@@ -23,6 +23,7 @@ public final class OptimizationProfileSelector {
         if (preference == PatchPreference.ON || mode == OptimizationMode.PERFORMANCE) return true;
         if (!descriptor.isAutoEligible()) return false;
         if (mode == OptimizationMode.AUTO) {
+            if (hardware == null) throw new IllegalArgumentException("hardware must be provided in auto mode");
             return hardware.getLogicalProcessors() >= 2
                     && hardware.getMaxHeapBytes() >= MIN_AUTO_HEAP_BYTES;
         }

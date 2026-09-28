@@ -18,6 +18,7 @@ import io.umce.platform.fabric.optimization.EmptyPassengerTrackDistancePatch;
 import io.umce.platform.fabric.optimization.EntityQueryPatchRuntime;
 import io.umce.platform.fabric.optimization.EntityTrackingPatchRuntime;
 import io.umce.platform.fabric.optimization.SmallBoxSectionProbePatch;
+import io.umce.platform.fabric.mixin.UmceMixinConfigPlugin;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -35,7 +36,7 @@ public final class FabricPatchManager implements AutoCloseable {
     private final List<OptimizationPatch> patches = new ArrayList<OptimizationPatch>();
     private final ConfigStore configStore;
     private final FabricPlatformAdapter adapter;
-    private final HardwareProfile hardware = new HardwareDetector().detect();
+    private HardwareProfile hardware;
     private final OptimizationProfileSelector selector = new OptimizationProfileSelector();
     private UmceConfig configuration;
     private String configurationError;
@@ -43,7 +44,7 @@ public final class FabricPatchManager implements AutoCloseable {
     public FabricPatchManager(FabricPlatformAdapter adapter) {
         this.adapter = adapter;
         Path file = FabricLoader.getInstance().getConfigDir().resolve("umce.properties");
-        this.configStore = new ConfigStore(file, hardware.getLogicalProcessors());
+        this.configStore = new ConfigStore(file, Math.max(1, Runtime.getRuntime().availableProcessors()));
         register(new SmallBoxSectionProbePatch());
         register(new EmptyPassengerTrackDistancePatch());
 
@@ -51,7 +52,9 @@ public final class FabricPatchManager implements AutoCloseable {
             configuration = configStore.loadOrCreate();
             Map<String, PatchPreference> defaults = new LinkedHashMap<String, PatchPreference>();
             for (OptimizationPatch patch : patches) {
-                defaults.put(patch.getDescriptor().getId(), PatchPreference.AUTO);
+                PatchPreference defaultPreference = SmallBoxSectionProbePatch.ID.equals(patch.getDescriptor().getId())
+                        ? PatchPreference.OFF : PatchPreference.AUTO;
+                defaults.put(patch.getDescriptor().getId(), defaultPreference);
             }
             configuration = configStore.ensurePatchPreferences(defaults);
         } catch (IOException exception) {
@@ -59,8 +62,9 @@ public final class FabricPatchManager implements AutoCloseable {
             LOGGER.error("UMCE config is invalid; all gameplay patches remain disabled: {}", configurationError);
         }
         reconcile();
-        LOGGER.info("UMCE config: mode={}, cpu={} logical processors, max heap={} MiB, GPU={}",
-                getMode(), hardware.getLogicalProcessors(), hardware.getMaxHeapBytes() / (1024L * 1024L),
+        LOGGER.info("UMCE config: mode={}, hardware={}, GPU={}", getMode(),
+                hardware == null ? "not probed" : hardware.getLogicalProcessors() + " logical processors, max heap "
+                        + hardware.getMaxHeapBytes() / (1024L * 1024L) + " MiB",
                 configuration == null ? "unknown" : configuration.getGpuMode());
         if (configuration != null && "on".equals(configuration.getGpuMode())) {
             LOGGER.warn("GPU compute was requested, but UMCE has no GPU compute backend; GPU tasks remain disabled");
@@ -76,6 +80,11 @@ public final class FabricPatchManager implements AutoCloseable {
 
     public synchronized String getGpuMode() {
         return configuration == null ? "unknown" : configuration.getGpuMode();
+    }
+
+    public boolean hasGameplayMixinsLoaded() {
+        return UmceMixinConfigPlugin.isSmallBoxSectionHookSelected()
+                || UmceMixinConfigPlugin.isPassengerTrackingHookSelected();
     }
 
     public synchronized void setMode(String value) throws IOException {
@@ -164,13 +173,16 @@ public final class FabricPatchManager implements AutoCloseable {
 
     private void reconcile() {
         OptimizationMode mode = effectiveMode();
-        Map<String, String> settings = Collections.singletonMap("mode",
-                mode == OptimizationMode.SAFE || configuration == null ? "safe" : "optimized");
+        Map<String, String> settings = new LinkedHashMap<String, String>();
+        settings.put("mode", mode == OptimizationMode.SAFE || configuration == null ? "safe" : "optimized");
+        settings.put("entity-query-hook.available", Boolean.toString(UmceMixinConfigPlugin.isSmallBoxSectionHookSelected()));
+        settings.put("passenger-tracking-hook.available", Boolean.toString(UmceMixinConfigPlugin.isPassengerTrackingHookSelected()));
         PatchContext context = new PatchContext(adapter, settings);
+        HardwareProfile selectionHardware = mode == OptimizationMode.AUTO ? getHardwareProfile() : null;
         for (OptimizationPatch patch : patches) {
             PatchDescriptor descriptor = patch.getDescriptor();
-            boolean selected = configuration != null && selector.shouldEnable(mode,
-                    patchPreference(descriptor.getId()), descriptor, hardware);
+            boolean selected = configuration != null && !UmceMixinConfigPlugin.isPassiveStartup() && selector.shouldEnable(mode,
+                    patchPreference(descriptor.getId()), descriptor, selectionHardware);
             String systemOverride = System.getProperty("umce.patch." + descriptor.getId() + ".enabled");
             if (configuration != null && systemOverride != null) {
                 if ("true".equalsIgnoreCase(systemOverride)) selected = mode != OptimizationMode.SAFE;
@@ -187,6 +199,11 @@ public final class FabricPatchManager implements AutoCloseable {
                 engine.disable(descriptor.getId());
             }
         }
+    }
+
+    private HardwareProfile getHardwareProfile() {
+        if (hardware == null) hardware = new HardwareDetector().detect();
+        return hardware;
     }
 
     private PatchPreference patchPreference(String patchId) {

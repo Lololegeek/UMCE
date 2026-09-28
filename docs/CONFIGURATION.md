@@ -15,7 +15,7 @@ Set `optimization.mode` to one of:
 
 | Mode | Behavior |
 | --- | --- |
-| `safe` | Disables gameplay patches. This is the default and preserves vanilla behavior. |
+| `safe` | Starts without gameplay Mixins, profiler hooks, or worker threads. This is the default and preserves vanilla hot paths. |
 | `auto` | Enables patches marked auto-eligible when the conservative hardware checks pass (at least 2 logical processors and 1 GiB max heap). |
 | `balanced` | Enables only patches marked auto-eligible. |
 | `performance` | Tries every patch unless its preference is `off`, including experimental patches that may regress a workload. |
@@ -53,7 +53,11 @@ Commands (permission level 2):
 ```
 
 Enabling or disabling a patch sets the mode to `manual` and persists that
-preference. `/umce reload` applies edits made directly to the properties file.
+preference. If a server started in `safe`, enabling a Mixin-backed patch takes
+effect after a restart. If the server started with a gameplay Mixin, switching
+back to `safe` disables its behavior immediately; restart to remove the
+transformed hot-path hook itself. `/umce reload` applies config edits but cannot
+add or remove Mixins in a running JVM.
 
 ## CPU and GPU settings
 
@@ -70,8 +74,20 @@ not a current performance optimization.
 
 | Patch ID | Current status |
 | --- | --- |
-| `small-box-section-probe` | Auto-eligible, disabled in the default `safe` mode. Its isolated entity-query workload showed a repeatable gain; the broader moving-client workload remains inconclusive. |
+| `small-box-section-probe` | Manual-only and default `off`. A four-pair 2,000-entity run had a lower median MSPT in 3/4 pairs, but high pair-to-pair variation and one slower pair; keep it opt-in. |
 | `empty-passenger-track-distance` | Experimental and not auto-eligible. The initial target workload regressed, so it remains available for explicit selection/testing but is not chosen by Auto or Balanced. |
 
-Patch results are workload-dependent. For production servers, start with `safe`
-or `balanced`, then benchmark changes against the server's modpack and workload.
+The entity patch directly probes vanilla's existing `trackingSections` map. It
+does not build or maintain a second index and adds no entity insert/remove/move
+hooks, cache invalidation, locks, or `ConcurrentHashMap`. Its only algorithmic
+work is bounded section-map lookups for eligible small queries; larger queries
+fall back to vanilla. Passive startup omits the gameplay Mixins entirely, so it
+does not pay a per-query activation check.
+
+Patch results are workload-dependent. The four-pair entity comparison is
+promising for median MSPT in that specific saved-pig workload, but does not
+establish a repeatable gain across workloads. For production servers, leave
+the entity patch off until controlled paired runs show a repeatable gain
+without P95/P99 or significant CPU regressions. See the
+[Fabric entity probe report](FABRIC_1.21.1_SMALL_BOX_SECTION_PROBE.md) for
+query profiling and the raw ablation results.

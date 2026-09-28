@@ -1,37 +1,99 @@
 # Fabric 1.21.1: small-box entity section probe
 
-## What it changes
+## Implementation and controls
 
-The patch replaces the body of `SectionedEntityCache.forEachInBox` only when all of these conditions hold:
+The patch replaces `SectionedEntityCache.forEachInBox` only when the startup
+configuration selects `small-box-section-probe` and a query spans at most 64
+section coordinates. It probes Minecraft's existing `trackingSections` map in
+the same packed-coordinate order as vanilla and preserves empty-section checks
+and consumer early-abort behavior. Larger queries call vanilla directly.
 
-- Fabric adapter is running Minecraft 1.21.1;
-- UMCE mode is `optimized` and patch `small-box-section-probe` is enabled;
-- the query covers at most 64 section coordinates.
+There is no UMCE-owned spatial index. The patch does not add index builds,
+maintenance, entity insert/remove/move callbacks, cache invalidation, locks,
+or a `ConcurrentHashMap`. On an accelerated query it replaces vanilla's
+section scan; it does not run the vanilla scan and the probe twice.
 
-Vanilla scans its sorted set of tracked section positions in the query's X interval, filters Y/Z, and then reads each matching section. The patch calculates the same expanded bounds and probes the existing `trackingSections` map directly for each packed section coordinate. It keeps vanilla's packed-coordinate visitation order, skips empty/non-tracking sections, and honors early abort from the consumer. Queries over 64 candidate positions use the original vanilla method. It adds no second index or persistent cache.
+`optimization.patch.small-box-section-probe=off` is the default. The patch is
+manual-only and requires a restart to add or remove its Mixin. For a controlled
+test, use `optimization.mode=manual` with the preference set to `on`, or start
+with `-Dumce.mode=optimized
+-Dumce.patch.small-box-section-probe.enabled=true`. Keep it off for normal
+servers until the target workload has repeatable gains without tail-latency or
+CPU regressions.
 
-The optimization is based on the pre-change Spark profile: `SectionedEntityCache.forEachInBox` appeared in 24.3% of inclusive server-thread sample weight during a 10k-entity workload. The separate hopper profile attributed about 0.6% to `HopperBlockEntity.serverTick`, so hopper polling was not selected. Raw profiles and the pre-change analysis are in [benchmark-results/2026-09-27-1.21.1-entity-profile-before.md](../benchmark-results/2026-09-27-1.21.1-entity-profile-before.md).
+## Passive startup
 
-## Safety and controls
+`-Dumce.passive=true` prevents all UMCE gameplay and diagnostic Mixins from
+being applied during Mixin startup. In this mode the Fabric adapter does not
+start the tick profiler, entity-query profiler, or a worker pool, and it does
+not select patches. Normal SAFE configuration also omits gameplay Mixins.
+The adapter still loads its configuration and registers its command/lifecycle
+callbacks; those callbacks do not scan entities or execute per tick in passive
+mode.
 
-SAFE is the default (`umce.mode=safe`). The runtime flag stays false and the mixin returns at method entry, allowing vanilla to run unchanged. To opt in, set `-Dumce.mode=optimized -Dumce.patch.small-box-section-probe.enabled=true`. Operators can also use `/umce patch enable small-box-section-probe` and `/umce patch disable small-box-section-probe`; the toggle is independently managed through `OptimizationPatch` and `PatchEngine`.
+## Four-pair ablation: 2,000 entities
 
-The patch is marked medium risk and is supported only on Fabric 1.21.1. If its preconditions are not met, patch evaluation refuses to enable it.
+The test used 2,025 saved pigs, no clients, villagers, hoppers, redstone, or
+TNT, a 1G initial / 2G maximum heap, 2 seconds warmup and 5 seconds measured
+per condition. Four paired cycles alternated the order. Tick profiling was
+disabled. This is a short, single-workload comparison, not a general server
+claim.
 
-## Validation and results
+| Condition | Median rolling MSPT | Mean P95 | Mean P99 | CPU (% of one core) | Working set |
+|---|---:|---:|---:|---:|---:|
+| Vanilla baseline | 26.700 ms | 53.138 ms | 127.406 ms | 78.2% | 1179.8 MiB |
+| UMCE passive | 25.900 ms | 56.263 ms | 119.152 ms | 80.2% | 1179.5 MiB |
+| Entity patch | 24.850 ms | 52.853 ms | 121.148 ms | 76.4% | 1188.1 MiB |
 
-The Java test compares the candidate coordinate visitation sequence with the vanilla sorted-set sequence across ranges that cross zero and ranges on either side. The integrated server smoke run confirmed that the mixin loads and the patch can be enabled. SAFE and patch-enabled stress runs were also launched separately.
+Across four paired medians, passive UMCE differed from baseline by -1.78%
+(sample SD 5.66 percentage points). That is consistent with no clear MSPT
+overhead at this sample size; CPU was 2.0 points higher and working set was
+essentially unchanged. This does not prove zero overhead on other workloads.
 
-The four-cycle comparison uses the same saved 10k-pig world, no clients or villagers, no configured hoppers/redstone/TNT, a 1G initial and 4G maximum heap, 20 seconds of warmup, and 30 seconds of measurement per condition. The order alternates each cycle. See the full paired results and raw time series in [the ablation report](../benchmark-results/2026-09-27-1.21.1-patch-ablation-entity-section-probe-10k-comparison.md) and [CSV samples](../benchmark-results/2026-09-27-1.21.1-patch-ablation-entity-section-probe-10k-samples.csv).
+The patch was faster than passive UMCE in three of four pairs. Its median
+paired change was -4.65%, but the paired SD was 10.43 points and one pair was
+10.85% slower. Aggregate P95/P99 were below baseline, while patch P99 was
+slightly above passive UMCE; CPU was lower in this run and working set was
+8.3 MiB higher than baseline. This is not enough evidence to call the gain
+reproducible across workloads. The patch therefore remains default-off and
+manual-only.
 
-Against diagnostics-only, patch-enabled median rolling MSPT was faster in all four pairs (−6.90%, −2.98%, −4.21%, −2.77%; median −3.60%). Mean P95 and P99 were also lower in aggregate. Working set was effectively unchanged (1331.5 MiB vs 1334.0 MiB). Process CPU averaged 116.1% of one core with the patch vs 113.2% diagnostics-only; treat this as a measured increase, not a CPU reduction. This is one isolated entity-heavy workload, not evidence for all server workloads.
+Full results and raw samples: [four-pair ablation report](../benchmark-results/2026-09-28-1.21.1-patch-ablation-entity-section-probe-passive-entity-2000-remapped-4pairs-comparison.md)
+and [sample CSV](../benchmark-results/2026-09-28-1.21.1-patch-ablation-entity-section-probe-passive-entity-2000-remapped-4pairs-samples.csv).
 
-A separate 4-cycle run with 50 moving clients and 10,062 pigs showed a median MSPT change of −3.71% versus diagnostics-only, but the patch was faster in only 3/4 pairs; one pair was 21.71% slower and paired variation was high. P95/P99, CPU, and working set were lower in aggregate in this run, but that does not remove the per-pair uncertainty. See the [multiclient report](../benchmark-results/2026-09-27-1.21.1-patch-ablation-entity50-exploration-comparison.md). Keep the patch opt-in and treat its gain as workload-specific until more multiclient repetitions stabilize the result.
+## Query-level diagnostic profile
 
-Allocation data is unavailable. On this Windows/JDK setup, HotSpot reported an active JFR recording but every `jcmd JFR.dump` completed with 0 bytes written. No allocation improvement is claimed. Revisit this measure with a working allocation sampler before making conclusions about allocation rate.
+The opt-in diagnostic wrapper measured baseline vanilla queries at 823 ns
+inclusive mean and the accelerated patch queries at 782 ns, about 5.0% lower
+for this query method. The baseline run counted 668,499 queries and about
+53 allocated bytes per query; the patch run counted 665,771 accelerated
+queries and about 76 allocated bytes per query. The patch made 1,079,158
+direct section probes (about 1.62 per query) and had no fallback queries.
+Inclusive query time per server tick was 3.075 ms for the vanilla diagnostic
+run and 2.928 ms for the patch diagnostic run.
 
-Build and tests were run with:
+These are separate short instrumented runs. Allocation samples include work
+performed by the query consumer and are not a controlled allocation delta;
+they do not establish that the patch itself allocates an extra 23 bytes. The
+diagnostic Mixin and allocation sampling add overhead, so these numbers explain
+the hot path but are not used as performance benchmark results.
 
-```powershell
-.\gradlew.bat :platforms:fabric-1.21.1:build
-```
+| Instrumented condition | Queries | Mean inclusive time | Bytes/query | Exclusive query time/tick |
+|---|---:|---:|---:|---:|
+| Vanilla query | 668,499 | 823 ns | 53 B | 3.075 ms |
+| Accelerated query | 665,771 | 782 ns | 76 B | 2.928 ms |
+
+The measured UMCE index-specific costs are all zero because no custom index
+exists: builds 0, maintenance updates 0, inserts/removes/moves 0, cache
+invalidations 0, locks 0. No `ConcurrentHashMap`, collection copy, or periodic
+index reconstruction is present. Mixin selection ensures an accelerated call
+replaces the vanilla method body; larger or unsupported queries fall back to
+the original method.
+
+Profile comparisons: [vanilla profile](../benchmark-results/2026-09-28-1.21.1-stress-entity-profile-vanilla-remapped-2000-v2-comparison.md)
+and [patch profile](../benchmark-results/2026-09-28-1.21.1-stress-entity-profile-patch-remapped-2000-v1-comparison.md).
+
+The previous 10k-entity profile identified `SectionedEntityCache.forEachInBox`
+as a hot path, but it is not proof of a win from this probe. Older benchmark
+claims were made before passive startup could omit the Mixin and are superseded
+by the ablation above.

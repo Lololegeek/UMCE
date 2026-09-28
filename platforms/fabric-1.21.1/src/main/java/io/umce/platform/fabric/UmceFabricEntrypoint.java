@@ -5,6 +5,9 @@ import io.umce.core.patch.PatchOperationResult;
 import io.umce.core.patch.PatchState;
 import io.umce.core.profiler.ProfileSnapshot;
 import io.umce.core.profiler.TickProfiler;
+import io.umce.platform.fabric.optimization.EntityQueryPatchRuntime;
+import io.umce.platform.fabric.optimization.EntityQueryProfiler;
+import io.umce.platform.fabric.mixin.UmceMixinConfigPlugin;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -21,7 +24,7 @@ import org.slf4j.LoggerFactory;
 public final class UmceFabricEntrypoint implements ModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("UMCE");
     private static final boolean TICK_PROFILING_ENABLED = Boolean.getBoolean("umce.tickProfiler.enabled");
-    private static final TickProfiler TICK_PROFILER = new TickProfiler(3_600);
+    private static final TickProfiler TICK_PROFILER = TICK_PROFILING_ENABLED ? new TickProfiler(3_600) : null;
     private static final FabricPlatformAdapter PLATFORM_ADAPTER = new FabricPlatformAdapter();
     private static FabricPatchManager PATCH_MANAGER;
     private static volatile long tickStartNanos;
@@ -35,10 +38,16 @@ public final class UmceFabricEntrypoint implements ModInitializer {
 
         PATCH_MANAGER = new FabricPatchManager(PLATFORM_ADAPTER);
         LOGGER.info("UMCE optimization mode: {}", PATCH_MANAGER.getMode());
+        LOGGER.info("UMCE startup hooks: passive={}, entity-query={}, passenger-tracking={}, query-profiler={}",
+                UmceMixinConfigPlugin.isPassiveStartup(), UmceMixinConfigPlugin.isSmallBoxSectionHookSelected(),
+                UmceMixinConfigPlugin.isPassengerTrackingHookSelected(), EntityQueryPatchRuntime.isProfilingEnabled());
         ServerLifecycleEvents.SERVER_STARTED.register(server -> logServerStarted(server, loaderVersion));
         ServerLifecycleEvents.SERVER_STARTED.register(PLATFORM_ADAPTER::setServer);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             if (TICK_PROFILING_ENABLED) logFinalProfile();
+            if (io.umce.platform.fabric.optimization.EntityQueryPatchRuntime.isProfilingEnabled()) {
+                io.umce.platform.fabric.optimization.EntityQueryProfiler.logSummary(LOGGER);
+            }
             if (PATCH_MANAGER != null) PATCH_MANAGER.close();
             PLATFORM_ADAPTER.setServer(null);
         });
@@ -52,6 +61,10 @@ public final class UmceFabricEntrypoint implements ModInitializer {
             });
         } else {
             LOGGER.info("UMCE tick profiler disabled; enable with -Dumce.tickProfiler.enabled=true");
+        }
+        if (EntityQueryPatchRuntime.isProfilingEnabled()) {
+            LOGGER.warn("UMCE entity-query diagnostic profiling is active; it adds timing and allocation sampling overhead");
+            ServerTickEvents.END_SERVER_TICK.register(server -> EntityQueryProfiler.recordServerTick());
         }
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -156,6 +169,9 @@ public final class UmceFabricEntrypoint implements ModInitializer {
             PATCH_MANAGER.setMode(value);
             String message = "UMCE optimization mode set to " + PATCH_MANAGER.getMode()
                     + " | " + PATCH_MANAGER.getPatchSummary();
+            if ("safe".equalsIgnoreCase(value) && PATCH_MANAGER.hasGameplayMixinsLoaded()) {
+                message += " | restart the server to remove startup-loaded gameplay hooks";
+            }
             if (player != null) player.sendMessage(Text.literal(message), false);
             else LOGGER.info(message);
             return 1;

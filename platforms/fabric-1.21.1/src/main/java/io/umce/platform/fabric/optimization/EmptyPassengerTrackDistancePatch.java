@@ -24,6 +24,10 @@ public final class EmptyPassengerTrackDistancePatch implements OptimizationPatch
             return new PatchEvaluation(PatchEvaluation.Status.DISABLED,
                     "SAFE mode keeps vanilla passenger traversal active");
         }
+        if (!"true".equals(context.getSettings().get("passenger-tracking-hook.available"))) {
+            return new PatchEvaluation(PatchEvaluation.Status.UNSUPPORTED,
+                    "The passive startup omitted this Mixin; configure the patch before starting or restart the server");
+        }
         if (!"fabric-1.21.1".equals(context.getPlatform().getPlatformId())
                 || context.getPlatform().getLoaderId() != LoaderId.FABRIC
                 || !"1.21.1".equals(context.getPlatform().getMinecraftRelease().getId())) {

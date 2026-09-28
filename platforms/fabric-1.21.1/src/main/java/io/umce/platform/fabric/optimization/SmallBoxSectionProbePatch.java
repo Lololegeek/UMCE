@@ -13,7 +13,7 @@ import io.umce.api.platform.LoaderId;
 public final class SmallBoxSectionProbePatch implements OptimizationPatch {
     public static final String ID = "small-box-section-probe";
     private static final PatchDescriptor DESCRIPTOR = new PatchDescriptor(ID,
-            "Small entity-query section probes", OptimizationCategory.ENTITIES, PatchRisk.MEDIUM, false, true);
+            "Small entity-query section probes", OptimizationCategory.ENTITIES, PatchRisk.MEDIUM, false, false);
 
     @Override public PatchDescriptor getDescriptor() { return DESCRIPTOR; }
 
@@ -22,6 +22,10 @@ public final class SmallBoxSectionProbePatch implements OptimizationPatch {
         if (!"optimized".equalsIgnoreCase(context.getSettings().get("mode"))) {
             return new PatchEvaluation(PatchEvaluation.Status.DISABLED,
                     "SAFE mode keeps the vanilla entity section scan active");
+        }
+        if (!"true".equals(context.getSettings().get("entity-query-hook.available"))) {
+            return new PatchEvaluation(PatchEvaluation.Status.UNSUPPORTED,
+                    "The passive startup omitted this Mixin; configure the patch before starting or restart the server");
         }
         if (!"fabric-1.21.1".equals(context.getPlatform().getPlatformId())
                 || context.getPlatform().getLoaderId() != LoaderId.FABRIC

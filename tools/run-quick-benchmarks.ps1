@@ -92,7 +92,8 @@ function Format-Number([double]$Value, [int]$Digits = 2) {
 }
 
 function New-PartialRow($Scenario, [string]$Workload, [string]$CsvPath, [string]$FallbackStatus) {
-    $samples = if (Test-Path -LiteralPath $CsvPath) { @(Import-Csv -LiteralPath $CsvPath) } else { @() }
+    $samples = @()
+    if (Test-Path -LiteralPath $CsvPath) { $samples = @(Import-Csv -LiteralPath $CsvPath) }
     $base = @($samples | Where-Object condition -eq 'without-umce')
     $with = @($samples | Where-Object condition -eq 'with-umce')
     $baseMspt = Get-Median ([double[]]@($base | ForEach-Object { ConvertTo-BenchNumber $_.tick_mean_ms }))

@@ -770,12 +770,14 @@ for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
 $changeMedian = Get-Median ([double[]]$pairedPercentChanges.ToArray())
 $changeStddev = Get-StandardDeviation ([double[]]$pairedPercentChanges.ToArray())
 $lines.Add('')
-$lines.Add("Median paired change in rolling MSPT windows (UMCE vs baseline): $($changeMedian.ToString('F2', $culture))%; sample standard deviation across pairs: $($changeStddev.ToString('F2', $culture)) percentage points; valid pairs: $($pairedPercentChanges.Count)/$Repeats. Positive values are slower with UMCE. This is instrumentation overhead, not an optimization comparison.")
+$comparisonInterpretation = if ($EnableSmallBoxSectionProbe) { 'The small-box-section-probe patch was enabled in the UMCE condition.' } else { 'No gameplay patch was enabled; this measures diagnostics-only overhead.' }
+$lines.Add("Median paired change in rolling MSPT windows (UMCE vs baseline): $($changeMedian.ToString('F2', $culture))%; sample standard deviation across pairs: $($changeStddev.ToString('F2', $culture)) percentage points; valid pairs: $($pairedPercentChanges.Count)/$Repeats. Positive values are slower with UMCE. $comparisonInterpretation")
 $lines.Add('')
 $lines.Add("Saved overworld chunk records: $($seedChunkCounts.saved_overworld_chunks) in the seed world, $($withoutChunkCounts.saved_overworld_chunks) after baseline (+$($withoutChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)), and $($withChunkCounts.saved_overworld_chunks) after UMCE (+$($withChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)).")
 $csvRelative = [System.IO.Path]::GetRelativePath($root, $csv).Replace('\', '/')
 $lines.Add("Per-window data is in [$csvRelative]($csvRelative); only completed /tick query responses are included in the summary. The adjacent run logs show each connected bot, observed online player count, and server overload messages. Entity totals are verified from the generated world files before either test condition starts.")
 $lines.Add('')
-$lines.Add("UMCE currently registers no gameplay optimizations. Tick profiling is opt-in and is $tickProfilerMode. Conditions alternate order across pairs ($Repeats pair(s)); both start from copies of the same saved seed world. Differences are descriptive measurements, not optimization gains. At least three valid pairs are recommended before interpreting small differences.")
+$patchResultNote = if ($EnableSmallBoxSectionProbe -or $PatchComparison) { 'The small-box-section-probe gameplay patch was explicitly enabled for the UMCE patch condition.' } else { 'No gameplay optimization patch was explicitly enabled for the UMCE condition.' }
+$lines.Add("$patchResultNote Tick profiling is opt-in and is $tickProfilerMode. Conditions alternate order across pairs ($Repeats pair(s)); both start from copies of the same saved seed world. Results are workload-specific, and one short pair is not evidence of a reproducible gain. At least three valid pairs are recommended before interpreting small differences.")
 $lines | Set-Content -LiteralPath $report -Encoding utf8
 Write-Output "Stress comparison saved: $report"

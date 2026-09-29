@@ -22,6 +22,9 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
     private static volatile boolean brainTaskLaunchHookSelected;
     private static volatile boolean brainRunningTaskBufferHookSelected;
     private static volatile String brainRunningTaskBufferBlockers = "";
+    private static volatile boolean containerEmptyScanHookSelected;
+    private static volatile boolean hopperFullScanHookSelected;
+    private static volatile String inventoryScanBlockers = "";
     private static volatile boolean passiveStartup;
 
     @Override
@@ -39,21 +42,15 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         brainTaskLaunchHookSelected = !passiveStartup
                 && !FabricLoader.getInstance().isModLoaded("lithium")
                 && patchSelected("brain-task-launch-cache", "off", configuration);
-        brainRunningTaskBufferHookSelected = false;
-        brainRunningTaskBufferBlockers = "";
-        if (!passiveStartup && patchSelected("brain-running-task-buffer", "off", configuration)) {
-            // Snapshot reuse is not assumed safe for unknown mods which might retain the list.
-            Set<String> blockers = new java.util.TreeSet<>();
-            for (net.fabricmc.loader.api.ModContainer mod : FabricLoader.getInstance().getAllMods()) {
-                net.fabricmc.loader.api.ModContainer root = mod;
-                while (root.getContainingMod().isPresent()) root = root.getContainingMod().get();
-                String id = root.getMetadata().getId();
-                if (!"minecraft".equals(id) && !"java".equals(id) && !"fabricloader".equals(id)
-                        && !"fabric-api".equals(id) && !"umce_fabric_1_21_1".equals(id)) blockers.add(id);
-            }
-            brainRunningTaskBufferBlockers = String.join(", ", blockers);
-            brainRunningTaskBufferHookSelected = blockers.isEmpty();
-        }
+        boolean wantsRunningBuffer = !passiveStartup && patchSelected("brain-running-task-buffer", "off", configuration);
+        boolean wantsEmptyScan = !passiveStartup && patchSelected("container-empty-scan", "off", configuration);
+        boolean wantsFullScan = !passiveStartup && patchSelected("hopper-full-scan", "off", configuration);
+        String blockers = wantsRunningBuffer || wantsEmptyScan || wantsFullScan ? unverifiedRootMods() : "";
+        brainRunningTaskBufferBlockers = blockers;
+        inventoryScanBlockers = blockers;
+        brainRunningTaskBufferHookSelected = wantsRunningBuffer && blockers.isEmpty();
+        containerEmptyScanHookSelected = wantsEmptyScan && blockers.isEmpty();
+        hopperFullScanHookSelected = wantsFullScan && blockers.isEmpty();
     }
 
     public static boolean isSmallBoxSectionHookSelected() { return smallBoxSectionHookSelected; }
@@ -63,6 +60,9 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
     public static boolean isBrainTaskLaunchHookSelected() { return brainTaskLaunchHookSelected; }
     public static boolean isBrainRunningTaskBufferHookSelected() { return brainRunningTaskBufferHookSelected; }
     public static String getBrainRunningTaskBufferBlockers() { return brainRunningTaskBufferBlockers; }
+    public static boolean isContainerEmptyScanHookSelected() { return containerEmptyScanHookSelected; }
+    public static boolean isHopperFullScanHookSelected() { return hopperFullScanHookSelected; }
+    public static String getInventoryScanBlockers() { return inventoryScanBlockers; }
     public static boolean isPassiveStartup() { return passiveStartup; }
 
     @Override
@@ -73,10 +73,24 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.endsWith(".FindPointOfInterestTaskMixin")) return poiCandidateCollectionHookSelected;
         if (mixinClassName.endsWith(".BrainTaskLaunchCacheMixin")) return brainTaskLaunchHookSelected;
         if (mixinClassName.endsWith(".BrainRunningTaskBufferMixin")) return brainRunningTaskBufferHookSelected;
+        if (mixinClassName.endsWith(".ContainerEmptyScanMixin")) return containerEmptyScanHookSelected;
+        if (mixinClassName.endsWith(".HopperFullScanMixin")) return hopperFullScanHookSelected;
         if (mixinClassName.endsWith(".EntityQueryProfilerMixin")) {
             return !passiveStartup && Boolean.getBoolean("umce.entityQueryProfiler.enabled");
         }
         return !passiveStartup;
+    }
+
+    private static String unverifiedRootMods() {
+        Set<String> blockers = new java.util.TreeSet<>();
+        for (net.fabricmc.loader.api.ModContainer mod : FabricLoader.getInstance().getAllMods()) {
+            net.fabricmc.loader.api.ModContainer root = mod;
+            while (root.getContainingMod().isPresent()) root = root.getContainingMod().get();
+            String id = root.getMetadata().getId();
+            if (!"minecraft".equals(id) && !"java".equals(id) && !"fabricloader".equals(id)
+                    && !"fabric-api".equals(id) && !"umce_fabric_1_21_1".equals(id)) blockers.add(id);
+        }
+        return String.join(", ", blockers);
     }
 
     private static boolean patchSelected(String id, String fallback, Properties properties) {

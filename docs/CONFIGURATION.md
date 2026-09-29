@@ -80,6 +80,8 @@ not a current performance optimization.
 | `poi-candidate-collection` | Experimental and default `off`; no gain in the short screen. |
 | `brain-task-launch-cache` | Experimental and default `off`; lost all four paired MSPT comparisons across two screens. |
 | `brain-running-task-buffer` | New implementation, default `off`, not eligible for AUTO. Reuses internal running-task snapshot storage with bounded retention. No live test or benchmark yet; unknown root mods block selection. See [implementation and pending validation](FABRIC_1.21.1_BRAIN_RUNNING_TASK_BUFFER.md). |
+| `container-empty-scan` | Experimental, default `off`, excluded from AUTO. Indexed current-stack emptiness scan; unknown root mods block selection. [Implementation and pending validation](FABRIC_1.21.1_INVENTORY_SCANS.md). |
+| `hopper-full-scan` | Experimental, default `off`, excluded from AUTO. Indexed hopper fullness scan with vanilla exact equality; live parity and measurements pending. |
 
 The entity patch directly probes vanilla's existing `trackingSections` map. It
 does not build or maintain a second index and adds no entity insert/remove/move

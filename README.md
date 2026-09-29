@@ -23,6 +23,10 @@ inventory is refreshed from Mojang metadata; inventory entries do not imply
 runtime support. Each version/loader combination remains planned until its
 adapter and optimizations are implemented and validated.
 
+Current [optimization coverage](docs/SERVER_OPTIMIZATION_COVERAGE.md) and
+[inventory scan candidates](docs/FABRIC_1.21.1_INVENTORY_SCANS.md) distinguish
+implemented experiments from work still pending.
+
 ## Principles
 
 - Unknown code is not assumed to be thread-safe.

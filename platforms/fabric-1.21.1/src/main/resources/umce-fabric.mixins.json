@@ -11,6 +11,8 @@
     "FindPointOfInterestTaskMixin",
     "BrainTaskLaunchCacheMixin",
     "BrainRunningTaskBufferMixin",
+    "ContainerEmptyScanMixin",
+    "HopperFullScanMixin",
     "EntityQueryProfilerMixin"
   ],
   "injectors": {

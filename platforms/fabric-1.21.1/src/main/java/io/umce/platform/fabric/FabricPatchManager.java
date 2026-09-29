@@ -18,6 +18,7 @@ import io.umce.platform.fabric.optimization.EmptyPassengerTrackDistancePatch;
 import io.umce.platform.fabric.optimization.BrainTaskLaunchCachePatch;
 import io.umce.platform.fabric.optimization.BrainTaskLaunchCachePatchRuntime;
 import io.umce.platform.fabric.optimization.BrainRunningTaskBufferPatch;
+import io.umce.platform.fabric.optimization.InventoryScanPatch;
 import io.umce.platform.fabric.optimization.EntityQueryPatchRuntime;
 import io.umce.platform.fabric.optimization.EntityTrackingPatchRuntime;
 import io.umce.platform.fabric.optimization.InsideWallLoopPatch;
@@ -58,6 +59,8 @@ public final class FabricPatchManager implements AutoCloseable {
         register(new PoiCandidateCollectionPatch());
         register(new BrainTaskLaunchCachePatch());
         register(new BrainRunningTaskBufferPatch());
+        register(new InventoryScanPatch(InventoryScanPatch.Kind.CONTAINER_EMPTY));
+        register(new InventoryScanPatch(InventoryScanPatch.Kind.HOPPER_FULL));
 
         try {
             configuration = configStore.loadOrCreate();
@@ -70,6 +73,8 @@ public final class FabricPatchManager implements AutoCloseable {
                         || PoiCandidateCollectionPatch.ID.equals(patchId)
                         || BrainTaskLaunchCachePatch.ID.equals(patchId)
                         || BrainRunningTaskBufferPatch.ID.equals(patchId)
+                        || InventoryScanPatch.Kind.CONTAINER_EMPTY.id.equals(patchId)
+                        || InventoryScanPatch.Kind.HOPPER_FULL.id.equals(patchId)
                         ? PatchPreference.OFF : PatchPreference.AUTO;
                 defaults.put(patch.getDescriptor().getId(), defaultPreference);
             }
@@ -105,7 +110,9 @@ public final class FabricPatchManager implements AutoCloseable {
                 || UmceMixinConfigPlugin.isInsideWallHookSelected()
                 || UmceMixinConfigPlugin.isPoiCandidateCollectionHookSelected()
                 || UmceMixinConfigPlugin.isBrainTaskLaunchHookSelected()
-                || UmceMixinConfigPlugin.isBrainRunningTaskBufferHookSelected();
+                || UmceMixinConfigPlugin.isBrainRunningTaskBufferHookSelected()
+                || UmceMixinConfigPlugin.isContainerEmptyScanHookSelected()
+                || UmceMixinConfigPlugin.isHopperFullScanHookSelected();
     }
 
     public synchronized void setMode(String value) throws IOException {
@@ -207,6 +214,9 @@ public final class FabricPatchManager implements AutoCloseable {
         settings.put("brain-task-hook.available", Boolean.toString(UmceMixinConfigPlugin.isBrainTaskLaunchHookSelected()));
         settings.put("brain-running-buffer-hook.available", Boolean.toString(UmceMixinConfigPlugin.isBrainRunningTaskBufferHookSelected()));
         settings.put("brain-running-buffer.blockers", UmceMixinConfigPlugin.getBrainRunningTaskBufferBlockers());
+        settings.put("container-empty-hook.available", Boolean.toString(UmceMixinConfigPlugin.isContainerEmptyScanHookSelected()));
+        settings.put("hopper-full-hook.available", Boolean.toString(UmceMixinConfigPlugin.isHopperFullScanHookSelected()));
+        settings.put("inventory-scan.blockers", UmceMixinConfigPlugin.getInventoryScanBlockers());
         PatchContext context = new PatchContext(adapter, settings);
         HardwareProfile selectionHardware = mode == OptimizationMode.AUTO ? getHardwareProfile() : null;
         for (OptimizationPatch patch : patches) {

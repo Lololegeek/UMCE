@@ -21,6 +21,7 @@ param(
     [string]$ResultTag = '',
     [switch]$EnableTickProfiler,
     [switch]$EnableSmallBoxSectionProbe,
+    [switch]$EnablePassengerTrackingPatch,
     [switch]$EnableEntityQueryProfiler,
     [switch]$PatchComparison,
     [switch]$ProfileOnly,
@@ -51,7 +52,9 @@ $port = 25586
 $clientScript = Join-Path $PSScriptRoot 'minecraft-stress-clients.cjs'
 $entityCounter = Join-Path $PSScriptRoot 'count-minecraft-entities.py'
 $clientDependencyRoot = Join-Path $benchmarkRoot 'client-deps'
-$entitySpawnCount = if ($Entities -gt 0) { $Entities + [Math]::Max(25, [Math]::Ceiling($Entities * 0.01)) } else { 0 }
+$entitySpawnCount = $Entities
+$entityGridSpacing = 2
+$patchId = if ($EnablePassengerTrackingPatch) { 'empty-passenger-track-distance' } else { 'small-box-section-probe' }
 $script:checkpointSamples = [Collections.Generic.List[object]]::new()
 $culture = [Globalization.CultureInfo]::InvariantCulture
 if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a-z0-9][a-z0-9_-]{0,39}$') {
@@ -62,6 +65,8 @@ if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
 if ($HeapSnapshotOnly -and -not (Test-Path -LiteralPath $jcmd)) { throw "Java 21 jcmd not found: $jcmd" }
 if ($ProfileOnly -and $HeapSnapshotOnly) { throw 'Choose either Spark profiling or a heap snapshot.' }
 if ($PatchComparison -and ($ProfileOnly -or $HeapSnapshotOnly)) { throw 'PatchComparison cannot be combined with Spark or heap snapshot mode.' }
+if ($EnablePassengerTrackingPatch -and $EnableSmallBoxSectionProbe) { throw 'Choose one gameplay patch per patch comparison.' }
+if ($EnablePassengerTrackingPatch -and -not $PatchComparison) { throw 'EnablePassengerTrackingPatch requires PatchComparison.' }
 if ($ProfilePatchEnabled -and -not $ProfileOnly) { throw 'ProfilePatchEnabled requires ProfileOnly.' }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
 $artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -126,7 +131,7 @@ function Write-StressDatapack([string]$WorldDirectory) {
     New-Item -ItemType Directory -Force $functions | Out-Null
     Set-Content -LiteralPath (Join-Path $pack 'pack.mcmeta') -Encoding utf8 -Value '{"pack":{"pack_format":48,"description":"UMCE reproducible stress scenario for 1.21.1"}}'
     $commands = [Collections.Generic.List[string]]::new()
-    $spawnGridCount = [Math]::Max($entitySpawnCount, $TntCount)
+    $spawnGridCount = [Math]::Max([Math]::Max($entitySpawnCount, $TntCount), $Villagers)
     $entityColumns = if ($QuickStartup) { [Math]::Max(1, [Math]::Ceiling([Math]::Sqrt($spawnGridCount))) } else { 100 }
     $villagerColumns = if ($QuickStartup) { [Math]::Max(1, [Math]::Ceiling([Math]::Sqrt($Villagers))) } else { 25 }
     $commands.Add('gamerule doMobSpawning false')
@@ -134,16 +139,17 @@ function Write-StressDatapack([string]$WorldDirectory) {
     $commands.Add('gamerule doWeatherCycle false')
     $commands.Add('execute positioned 0 320 0 positioned over motion_blocking_no_leaves run setworldspawn ~ ~1 ~')
     $forceRadius = if (-not $QuickStartup -or $SaveAllIntervalSeconds -gt 0) { 127 } else {
-        [Math]::Max(32, [Math]::Min(64, [Math]::Ceiling(([Math]::Sqrt([Math]::Max($entitySpawnCount, $TntCount)) * 2) + 8)))
+        # /forceload is limited to 256 chunks; 120 blocks covers the compact entity grid in 16x16 chunks.
+        [Math]::Max(32, [Math]::Min(120, [Math]::Ceiling(([Math]::Sqrt($spawnGridCount) * 2) + 8)))
     }
     $commands.Add("forceload add -$forceRadius -$forceRadius $forceRadius $forceRadius")
     for ($index = 0; $index -lt $entitySpawnCount; $index++) {
         if ($QuickStartup) {
-            $x = -[Math]::Floor($entityColumns / 2) * 2 + (($index % $entityColumns) * 2)
-            $z = -[Math]::Floor($entityColumns / 2) * 2 + ([Math]::Floor($index / $entityColumns) * 2)
+            $x = -[Math]::Floor($entityColumns / 2) * $entityGridSpacing + (($index % $entityColumns) * $entityGridSpacing)
+            $z = -[Math]::Floor($entityColumns / 2) * $entityGridSpacing + ([Math]::Floor($index / $entityColumns) * $entityGridSpacing)
         } else {
-            $x = -100 + (($index % 100) * 2)
-            $z = -100 + ([Math]::Floor($index / 100) * 2)
+            $x = -100 + (($index % 100) * $entityGridSpacing)
+            $z = -100 + ([Math]::Floor($index / 100) * $entityGridSpacing)
         }
         $commands.Add("execute positioned $x 320 $z positioned over motion_blocking_no_leaves run summon minecraft:pig ~ ~1 ~ {PersistenceRequired:1b}")
     }
@@ -249,7 +255,8 @@ namespace UMCE {
 
 function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickProfiler = $false,
                       [bool]$EnableSmallBoxSectionProbe = $false, [bool]$Passive = $false,
-                      [bool]$EnableEntityQueryProfiler = $false) {
+                      [bool]$EnableEntityQueryProfiler = $false,
+                      [bool]$EnablePassengerTrackingPatch = $false) {
     $log = Join-Path $outputRoot "$Label.log"
     $stderrLog = Join-Path $outputRoot "$Label-stderr.log"
     Set-Content -LiteralPath $log -Encoding utf8 -Value ''
@@ -262,6 +269,9 @@ function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickP
     }
     if ($EnableSmallBoxSectionProbe) {
         $info.Arguments = "-Dumce.mode=optimized -Dumce.patch.small-box-section-probe.enabled=true " + $info.Arguments
+    }
+    if ($EnablePassengerTrackingPatch) {
+        $info.Arguments = "-Dumce.mode=optimized -Dumce.patch.empty-passenger-track-distance.enabled=true " + $info.Arguments
     }
     if ($Passive) { $info.Arguments = "-Dumce.passive=true " + $info.Arguments }
     if ($EnableEntityQueryProfiler) { $info.Arguments = "-Dumce.entityQueryProfiler.enabled=true " + $info.Arguments }
@@ -390,7 +400,9 @@ function Stop-Server($Server) {
 function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $usesUmce = $Condition -ne 'without-umce'
     $passive = $Condition -eq 'umce-passive'
-    $enableSmallBoxSectionProbe = $usesUmce -and ($Condition -eq 'patch-enabled' -or ($ProfileOnly -and $ProfilePatchEnabled) -or $EnableSmallBoxSectionProbe.IsPresent)
+    $patchCondition = $Condition -eq 'patch-enabled'
+    $enableSmallBoxSectionProbe = $usesUmce -and -not $EnablePassengerTrackingPatch.IsPresent -and ($patchCondition -or ($ProfileOnly -and $ProfilePatchEnabled) -or $EnableSmallBoxSectionProbe.IsPresent)
+    $enablePassengerTrackingPatchForRun = $usesUmce -and $EnablePassengerTrackingPatch.IsPresent -and $patchCondition
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
     $directory = Join-Path $runsRoot $label
@@ -406,7 +418,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
 
     $enableProfilerForRun = $usesUmce -and $EnableTickProfiler.IsPresent
     $enableQueryProfilerForRun = $usesUmce -and $EnableEntityQueryProfiler.IsPresent -and -not $passive
-    $server = Start-Server $directory $label $enableProfilerForRun $enableSmallBoxSectionProbe $passive $enableQueryProfilerForRun
+    $server = Start-Server $directory $label $enableProfilerForRun $enableSmallBoxSectionProbe $passive $enableQueryProfilerForRun $enablePassengerTrackingPatchForRun
     $clients = $null
     try {
         $clients = Start-StressClients $label
@@ -567,7 +579,7 @@ function Save-PartialSamples([Collections.Generic.List[object]]$Samples) {
     $date = Get-Date -Format 'yyyy-MM-dd'
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     if ($PatchComparison) {
-        $csv = Join-Path $outputRoot "$date-1.21.1-patch-ablation-entity-section-probe$runTag-samples.csv"
+        $csv = Join-Path $outputRoot "$date-1.21.1-patch-ablation-$patchId$runTag-samples.csv"
     } else {
         $csv = Join-Path $outputRoot "$date-1.21.1-stress$runTag-samples.csv"
     }
@@ -628,14 +640,15 @@ if ($HeapSnapshotOnly) {
 if ($ProfileOnly -or $HeapSnapshotOnly) { return }
 $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
 if ($PatchComparison) {
-    $csv = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation-entity-section-probe$runTag-samples.csv"
-    $report = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation-entity-section-probe$runTag-comparison.md"
+    $csv = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation-$patchId$runTag-samples.csv"
+    $report = Join-Path $outputRoot "$(Get-Date -Format 'yyyy-MM-dd')-1.21.1-patch-ablation-$patchId$runTag-comparison.md"
     $all | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding utf8
     $lines = [Collections.Generic.List[string]]::new()
     $lines.Add('# UMCE Fabric 1.21.1 patch ablation')
     $lines.Add('')
     $lines.Add("Captured: $([DateTimeOffset]::UtcNow.ToString('u'))")
-    $lines.Add("Patch: ``small-box-section-probe``; baseline has no UMCE, umce-passive loads UMCE with all gameplay Mixins omitted, and patch-enabled loads UMCE with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup $WarmupSeconds s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
+    $entityLayout = if ($patchId -eq 'small-box-section-probe' -or $entityCounts.pigs -gt 0) { "; pigs use a $entityGridSpacing-block grid" } else { '' }
+    $lines.Add("Patch: ``$patchId``; baseline has no UMCE, umce-passive loads UMCE with all gameplay Mixins omitted, and patch-enabled loads UMCE with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs$entityLayout, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup $WarmupSeconds s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
     $lines.Add("UMCE artifact SHA-256: $artifactSha256")
     $lines.Add('')
     $lines.Add('| Condition | Windows | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | CPU (% one core) | Working set MiB |')

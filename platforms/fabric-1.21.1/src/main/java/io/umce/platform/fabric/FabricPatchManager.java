@@ -52,7 +52,9 @@ public final class FabricPatchManager implements AutoCloseable {
             configuration = configStore.loadOrCreate();
             Map<String, PatchPreference> defaults = new LinkedHashMap<String, PatchPreference>();
             for (OptimizationPatch patch : patches) {
-                PatchPreference defaultPreference = SmallBoxSectionProbePatch.ID.equals(patch.getDescriptor().getId())
+                String patchId = patch.getDescriptor().getId();
+                PatchPreference defaultPreference = SmallBoxSectionProbePatch.ID.equals(patchId)
+                        || EmptyPassengerTrackDistancePatch.ID.equals(patchId)
                         ? PatchPreference.OFF : PatchPreference.AUTO;
                 defaults.put(patch.getDescriptor().getId(), defaultPreference);
             }

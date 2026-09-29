@@ -74,8 +74,8 @@ not a current performance optimization.
 
 | Patch ID | Current status |
 | --- | --- |
-| `small-box-section-probe` | Manual-only and default `off`. A four-pair 2,000-entity run had a lower median MSPT in 3/4 pairs, but high pair-to-pair variation and one slower pair; keep it opt-in. |
-| `empty-passenger-track-distance` | Experimental and not auto-eligible. The initial target workload regressed, so it remains available for explicit selection/testing but is not chosen by Auto or Balanced. |
+| `small-box-section-probe` | Manual-only and default `off`. On exactly 10,000 pigs it improved aggregate P95/P99, but median MSPT improved in only 3/4 pairs and CPU rose by 4.4 percentage points vs passive; keep it opt-in. |
+| `empty-passenger-track-distance` | Manual-only and default `off`. On 100 idle clients it was slower than passive in 3/4 pairs (+4.85% median MSPT); keep it off. |
 
 The entity patch directly probes vanilla's existing `trackingSections` map. It
 does not build or maintain a second index and adds no entity insert/remove/move
@@ -84,10 +84,9 @@ work is bounded section-map lookups for eligible small queries; larger queries
 fall back to vanilla. Passive startup omits the gameplay Mixins entirely, so it
 does not pay a per-query activation check.
 
-Patch results are workload-dependent. The four-pair entity comparison is
-promising for median MSPT in that specific saved-pig workload, but does not
-establish a repeatable gain across workloads. For production servers, leave
-the entity patch off until controlled paired runs show a repeatable gain
-without P95/P99 or significant CPU regressions. See the
-[Fabric entity probe report](FABRIC_1.21.1_SMALL_BOX_SECTION_PROBE.md) for
-query profiling and the raw ablation results.
+Patch results are workload-dependent. Neither current gameplay patch meets the
+acceptance rule of repeatable gains without tail-latency or CPU regression.
+Both preferences default to `off`, including in `performance` mode; enable a
+patch explicitly with `optimization.mode=manual` and its preference set to
+`on`. See the [Fabric entity probe report](FABRIC_1.21.1_SMALL_BOX_SECTION_PROBE.md)
+for query profiling, exact 10,000-entity results, and raw ablations.

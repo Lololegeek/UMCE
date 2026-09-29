@@ -31,35 +31,51 @@ The adapter still loads its configuration and registers its command/lifecycle
 callbacks; those callbacks do not scan entities or execute per tick in passive
 mode.
 
-## Four-pair ablation: 2,000 entities
+A separate four-pair SAFE-mode comparison with 100 idle clients had a paired
+median MSPT change of -3.71%, but pair-to-pair SD was 30.59 percentage points.
+That result is too noisy to establish a network overhead or gain; see the
+[100-client report](../benchmark-results/2026-09-29-1.21.1-stress-passive-network-100-validation-rerun-comparison.md).
 
-The test used 2,025 saved pigs, no clients, villagers, hoppers, redstone, or
-TNT, a 1G initial / 2G maximum heap, 2 seconds warmup and 5 seconds measured
-per condition. Four paired cycles alternated the order. Tick profiling was
-disabled. This is a short, single-workload comparison, not a general server
-claim.
+## Four-pair ablation: exactly 10,000 entities
+
+The test used exactly 10,000 saved pigs, no clients, villagers, hoppers,
+redstone, or TNT, a 1G initial / 4G maximum heap, 10 seconds warmup and 10
+seconds measured per condition. Four paired cycles alternated the order. Tick
+profiling was disabled. This is a short, single-workload comparison, not a
+general server claim.
 
 | Condition | Median rolling MSPT | Mean P95 | Mean P99 | CPU (% of one core) | Working set |
 |---|---:|---:|---:|---:|---:|
-| Vanilla baseline | 26.700 ms | 53.138 ms | 127.406 ms | 78.2% | 1179.8 MiB |
-| UMCE passive | 25.900 ms | 56.263 ms | 119.152 ms | 80.2% | 1179.5 MiB |
-| Entity patch | 24.850 ms | 52.853 ms | 121.148 ms | 76.4% | 1188.1 MiB |
+| Vanilla baseline | 78.650 ms | 106.194 ms | 126.317 ms | 127.6% | 1320.2 MiB |
+| UMCE passive | 78.800 ms | 104.150 ms | 119.462 ms | 128.6% | 1333.2 MiB |
+| Entity patch | 78.300 ms | 96.944 ms | 109.897 ms | 133.0% | 1335.0 MiB |
 
-Across four paired medians, passive UMCE differed from baseline by -1.78%
-(sample SD 5.66 percentage points). That is consistent with no clear MSPT
-overhead at this sample size; CPU was 2.0 points higher and working set was
-essentially unchanged. This does not prove zero overhead on other workloads.
+Across four paired medians, passive UMCE differed from baseline by +0.51%
+(sample SD 7.93 percentage points). That is consistent with no clear MSPT
+overhead at this sample size; CPU was 0.6 points higher. This does not prove
+zero overhead on other workloads.
 
-The patch was faster than passive UMCE in three of four pairs. Its median
-paired change was -4.65%, but the paired SD was 10.43 points and one pair was
-10.85% slower. Aggregate P95/P99 were below baseline, while patch P99 was
-slightly above passive UMCE; CPU was lower in this run and working set was
-8.3 MiB higher than baseline. This is not enough evidence to call the gain
-reproducible across workloads. The patch therefore remains default-off and
-manual-only.
+The patch improved median MSPT in three of four pairs. Its median paired
+change was -6.40%, but the paired SD was 10.39 points and one pair was 7.91%
+slower. Aggregate P95/P99 were lower than passive UMCE, while CPU was 4.4
+percentage points higher and working set was 1.8 MiB higher. This does not
+meet the CPU and repeatability requirements, so the patch remains default-off
+and manual-only.
 
-Full results and raw samples: [four-pair ablation report](../benchmark-results/2026-09-28-1.21.1-patch-ablation-entity-section-probe-passive-entity-2000-remapped-4pairs-comparison.md)
-and [sample CSV](../benchmark-results/2026-09-28-1.21.1-patch-ablation-entity-section-probe-passive-entity-2000-remapped-4pairs-samples.csv).
+A follow-up candidate that fell back to vanilla whenever the total tracked
+section count was no larger than the probe volume was tested separately. It
+made this 10,000-pig case slower in three of four pairs (+3.02% median vs
+passive), with worse P95/P99 and CPU. That guard was rejected and is not in the
+shipping code; its [ablation report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-small-box-section-probe-adaptive-exact10k-entity-validation-comparison.md)
+is retained for comparison.
+
+Full results and raw samples: [four-pair 10,000-entity ablation report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-small-box-section-probe-exact10k-entity-validation-comparison.md)
+and [sample CSV](../benchmark-results/2026-09-29-1.21.1-patch-ablation-small-box-section-probe-exact10k-entity-validation-samples.csv).
+
+A separate 11,000-pig run produced only a -0.91% median MSPT change vs passive
+(3/4 pairs faster, SD 3.10 points), with P95/P99 slightly worse and CPU nearly
+unchanged. It supports keeping the patch opt-in rather than claiming a stable
+general gain. See the [11,000-entity report](../benchmark-results/2026-09-28-1.21.1-patch-ablation-entity-section-probe-passive-entity-10k-validation-comparison.md).
 
 ## Query-level diagnostic profile
 
@@ -92,6 +108,10 @@ the original method.
 
 Profile comparisons: [vanilla profile](../benchmark-results/2026-09-28-1.21.1-stress-entity-profile-vanilla-remapped-2000-v2-comparison.md)
 and [patch profile](../benchmark-results/2026-09-28-1.21.1-stress-entity-profile-patch-remapped-2000-v1-comparison.md).
+
+The 100-client passenger-tracking candidate was also retested across four
+paired cycles. It was slower than passive UMCE in three pairs (+4.85% median)
+and remains default-off; see [its ablation report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-empty-passenger-track-distance-passenger-network-100-validation-comparison.md).
 
 The previous 10k-entity profile identified `SectionedEntityCache.forEachInBox`
 as a hot path, but it is not proof of a win from this probe. Older benchmark

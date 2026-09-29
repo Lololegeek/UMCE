@@ -111,7 +111,10 @@ and [patch profile](../benchmark-results/2026-09-28-1.21.1-stress-entity-profile
 
 The 100-client passenger-tracking candidate was also retested across four
 paired cycles. It was slower than passive UMCE in three pairs (+4.85% median)
-and remains default-off; see [its ablation report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-empty-passenger-track-distance-passenger-network-100-validation-comparison.md).
+and remains default-off; see [its four-pair ablation report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-empty-passenger-track-distance-passenger-network-100-validation-comparison.md).
+An earlier two-pair screen looked faster in both pairs, but that signal did not
+hold up in validation; its [screen report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-empty-passenger-track-distance-passenger-network-100-screen-comparison.md)
+is retained to show why the follow-up was needed.
 
 The previous 10k-entity profile identified `SectionedEntityCache.forEachInBox`
 as a hot path, but it is not proof of a win from this probe. Older benchmark

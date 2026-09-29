@@ -8,6 +8,7 @@
     "SectionedEntityCacheMixin",
     "EntityTrackerMixin",
     "EntityInsideWallMixin",
+    "FindPointOfInterestTaskMixin",
     "EntityQueryProfilerMixin"
   ],
   "injectors": {

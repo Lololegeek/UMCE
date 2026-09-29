@@ -18,6 +18,7 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
     private static volatile boolean smallBoxSectionHookSelected;
     private static volatile boolean passengerTrackingHookSelected;
     private static volatile boolean insideWallHookSelected;
+    private static volatile boolean poiCandidateCollectionHookSelected;
     private static volatile boolean passiveStartup;
 
     @Override
@@ -30,11 +31,14 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
                 && patchSelected("empty-passenger-track-distance", "false", configuration);
         // This experiment diverged from vanilla suffocation behavior, so no config may apply its Mixin.
         insideWallHookSelected = false;
+        poiCandidateCollectionHookSelected = !passiveStartup
+                && patchSelected("poi-candidate-collection", "false", configuration);
     }
 
     public static boolean isSmallBoxSectionHookSelected() { return smallBoxSectionHookSelected; }
     public static boolean isPassengerTrackingHookSelected() { return passengerTrackingHookSelected; }
     public static boolean isInsideWallHookSelected() { return insideWallHookSelected; }
+    public static boolean isPoiCandidateCollectionHookSelected() { return poiCandidateCollectionHookSelected; }
     public static boolean isPassiveStartup() { return passiveStartup; }
 
     @Override
@@ -42,6 +46,7 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.endsWith(".SectionedEntityCacheMixin")) return smallBoxSectionHookSelected;
         if (mixinClassName.endsWith(".EntityTrackerMixin")) return passengerTrackingHookSelected;
         if (mixinClassName.endsWith(".EntityInsideWallMixin")) return insideWallHookSelected;
+        if (mixinClassName.endsWith(".FindPointOfInterestTaskMixin")) return poiCandidateCollectionHookSelected;
         if (mixinClassName.endsWith(".EntityQueryProfilerMixin")) {
             return !passiveStartup && Boolean.getBoolean("umce.entityQueryProfiler.enabled");
         }

@@ -17,6 +17,8 @@ import io.umce.core.patch.PatchState;
 import io.umce.platform.fabric.optimization.EmptyPassengerTrackDistancePatch;
 import io.umce.platform.fabric.optimization.EntityQueryPatchRuntime;
 import io.umce.platform.fabric.optimization.EntityTrackingPatchRuntime;
+import io.umce.platform.fabric.optimization.InsideWallLoopPatch;
+import io.umce.platform.fabric.optimization.InsideWallLoopPatchRuntime;
 import io.umce.platform.fabric.optimization.SmallBoxSectionProbePatch;
 import io.umce.platform.fabric.mixin.UmceMixinConfigPlugin;
 import net.fabricmc.loader.api.FabricLoader;
@@ -47,6 +49,7 @@ public final class FabricPatchManager implements AutoCloseable {
         this.configStore = new ConfigStore(file, Math.max(1, Runtime.getRuntime().availableProcessors()));
         register(new SmallBoxSectionProbePatch());
         register(new EmptyPassengerTrackDistancePatch());
+        register(new InsideWallLoopPatch());
 
         try {
             configuration = configStore.loadOrCreate();
@@ -55,6 +58,7 @@ public final class FabricPatchManager implements AutoCloseable {
                 String patchId = patch.getDescriptor().getId();
                 PatchPreference defaultPreference = SmallBoxSectionProbePatch.ID.equals(patchId)
                         || EmptyPassengerTrackDistancePatch.ID.equals(patchId)
+                        || InsideWallLoopPatch.ID.equals(patchId)
                         ? PatchPreference.OFF : PatchPreference.AUTO;
                 defaults.put(patch.getDescriptor().getId(), defaultPreference);
             }
@@ -86,7 +90,8 @@ public final class FabricPatchManager implements AutoCloseable {
 
     public boolean hasGameplayMixinsLoaded() {
         return UmceMixinConfigPlugin.isSmallBoxSectionHookSelected()
-                || UmceMixinConfigPlugin.isPassengerTrackingHookSelected();
+                || UmceMixinConfigPlugin.isPassengerTrackingHookSelected()
+                || UmceMixinConfigPlugin.isInsideWallHookSelected();
     }
 
     public synchronized void setMode(String value) throws IOException {
@@ -147,6 +152,8 @@ public final class FabricPatchManager implements AutoCloseable {
         return EntityTrackingPatchRuntime.isEmptyPassengerTrackDistanceEnabled();
     }
 
+    public boolean isInsideWallLoopEnabled() { return InsideWallLoopPatchRuntime.isEnabled(); }
+
     @Override public synchronized void close() { engine.close(); }
 
     private void register(OptimizationPatch patch) {
@@ -179,6 +186,7 @@ public final class FabricPatchManager implements AutoCloseable {
         settings.put("mode", mode == OptimizationMode.SAFE || configuration == null ? "safe" : "optimized");
         settings.put("entity-query-hook.available", Boolean.toString(UmceMixinConfigPlugin.isSmallBoxSectionHookSelected()));
         settings.put("passenger-tracking-hook.available", Boolean.toString(UmceMixinConfigPlugin.isPassengerTrackingHookSelected()));
+        settings.put("inside-wall-hook.available", Boolean.toString(UmceMixinConfigPlugin.isInsideWallHookSelected()));
         PatchContext context = new PatchContext(adapter, settings);
         HardwareProfile selectionHardware = mode == OptimizationMode.AUTO ? getHardwareProfile() : null;
         for (OptimizationPatch patch : patches) {

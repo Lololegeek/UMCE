@@ -76,6 +76,10 @@ not a current performance optimization.
 | --- | --- |
 | `small-box-section-probe` | Manual-only and default `off`. On exactly 10,000 pigs it improved aggregate P95/P99, but median MSPT improved in only 3/4 pairs and CPU rose by 4.4 percentage points vs passive; keep it opt-in. |
 | `empty-passenger-track-distance` | Manual-only and default `off`. On 100 idle clients it was slower than passive in 3/4 pairs (+4.85% median MSPT); keep it off. |
+| `inside-wall-loop` | Rejected for suffocation behavior divergence; its Mixin is locked off even with an explicit ON preference. |
+| `poi-candidate-collection` | Experimental and default `off`; no gain in the short screen. |
+| `brain-task-launch-cache` | Experimental and default `off`; lost all four paired MSPT comparisons across two screens. |
+| `brain-running-task-buffer` | New implementation, default `off`, not eligible for AUTO. Reuses internal running-task snapshot storage with bounded retention. No live test or benchmark yet; unknown root mods block selection. See [implementation and pending validation](FABRIC_1.21.1_BRAIN_RUNNING_TASK_BUFFER.md). |
 
 The entity patch directly probes vanilla's existing `trackingSections` map. It
 does not build or maintain a second index and adds no entity insert/remove/move
@@ -84,9 +88,9 @@ work is bounded section-map lookups for eligible small queries; larger queries
 fall back to vanilla. Passive startup omits the gameplay Mixins entirely, so it
 does not pay a per-query activation check.
 
-Patch results are workload-dependent. Neither current gameplay patch meets the
+Patch results are workload-dependent. No current gameplay patch has met the
 acceptance rule of repeatable gains without tail-latency or CPU regression.
-Both preferences default to `off`, including in `performance` mode; enable a
+All gameplay preferences default to `off`, including in `performance` mode; enable a
 patch explicitly with `optimization.mode=manual` and its preference set to
 `on`. See the [Fabric entity probe report](FABRIC_1.21.1_SMALL_BOX_SECTION_PROBE.md)
 for query profiling, exact 10,000-entity results, and raw ablations.

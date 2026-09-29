@@ -10,6 +10,7 @@
     "EntityInsideWallMixin",
     "FindPointOfInterestTaskMixin",
     "BrainTaskLaunchCacheMixin",
+    "BrainRunningTaskBufferMixin",
     "EntityQueryProfilerMixin"
   ],
   "injectors": {

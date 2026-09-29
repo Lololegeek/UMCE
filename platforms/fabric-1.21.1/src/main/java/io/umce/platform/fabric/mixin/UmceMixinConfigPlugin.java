@@ -20,6 +20,8 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
     private static volatile boolean insideWallHookSelected;
     private static volatile boolean poiCandidateCollectionHookSelected;
     private static volatile boolean brainTaskLaunchHookSelected;
+    private static volatile boolean brainRunningTaskBufferHookSelected;
+    private static volatile String brainRunningTaskBufferBlockers = "";
     private static volatile boolean passiveStartup;
 
     @Override
@@ -27,16 +29,31 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         passiveStartup = Boolean.getBoolean("umce.passive");
         Properties configuration = readConfiguration();
         smallBoxSectionHookSelected = !passiveStartup
-                && patchSelected("small-box-section-probe", "false", configuration);
+                && patchSelected("small-box-section-probe", "off", configuration);
         passengerTrackingHookSelected = !passiveStartup
-                && patchSelected("empty-passenger-track-distance", "false", configuration);
+                && patchSelected("empty-passenger-track-distance", "off", configuration);
         // This experiment diverged from vanilla suffocation behavior, so no config may apply its Mixin.
         insideWallHookSelected = false;
         poiCandidateCollectionHookSelected = !passiveStartup
-                && patchSelected("poi-candidate-collection", "false", configuration);
+                && patchSelected("poi-candidate-collection", "off", configuration);
         brainTaskLaunchHookSelected = !passiveStartup
                 && !FabricLoader.getInstance().isModLoaded("lithium")
-                && patchSelected("brain-task-launch-cache", "false", configuration);
+                && patchSelected("brain-task-launch-cache", "off", configuration);
+        brainRunningTaskBufferHookSelected = false;
+        brainRunningTaskBufferBlockers = "";
+        if (!passiveStartup && patchSelected("brain-running-task-buffer", "off", configuration)) {
+            // Snapshot reuse is not assumed safe for unknown mods which might retain the list.
+            Set<String> blockers = new java.util.TreeSet<>();
+            for (net.fabricmc.loader.api.ModContainer mod : FabricLoader.getInstance().getAllMods()) {
+                net.fabricmc.loader.api.ModContainer root = mod;
+                while (root.getContainingMod().isPresent()) root = root.getContainingMod().get();
+                String id = root.getMetadata().getId();
+                if (!"minecraft".equals(id) && !"java".equals(id) && !"fabricloader".equals(id)
+                        && !"fabric-api".equals(id) && !"umce_fabric_1_21_1".equals(id)) blockers.add(id);
+            }
+            brainRunningTaskBufferBlockers = String.join(", ", blockers);
+            brainRunningTaskBufferHookSelected = blockers.isEmpty();
+        }
     }
 
     public static boolean isSmallBoxSectionHookSelected() { return smallBoxSectionHookSelected; }
@@ -44,6 +61,8 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
     public static boolean isInsideWallHookSelected() { return insideWallHookSelected; }
     public static boolean isPoiCandidateCollectionHookSelected() { return poiCandidateCollectionHookSelected; }
     public static boolean isBrainTaskLaunchHookSelected() { return brainTaskLaunchHookSelected; }
+    public static boolean isBrainRunningTaskBufferHookSelected() { return brainRunningTaskBufferHookSelected; }
+    public static String getBrainRunningTaskBufferBlockers() { return brainRunningTaskBufferBlockers; }
     public static boolean isPassiveStartup() { return passiveStartup; }
 
     @Override
@@ -53,6 +72,7 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.endsWith(".EntityInsideWallMixin")) return insideWallHookSelected;
         if (mixinClassName.endsWith(".FindPointOfInterestTaskMixin")) return poiCandidateCollectionHookSelected;
         if (mixinClassName.endsWith(".BrainTaskLaunchCacheMixin")) return brainTaskLaunchHookSelected;
+        if (mixinClassName.endsWith(".BrainRunningTaskBufferMixin")) return brainRunningTaskBufferHookSelected;
         if (mixinClassName.endsWith(".EntityQueryProfilerMixin")) {
             return !passiveStartup && Boolean.getBoolean("umce.entityQueryProfiler.enabled");
         }

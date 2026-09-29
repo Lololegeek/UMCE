@@ -25,6 +25,7 @@ param(
     [switch]$EnableInsideWallLoopPatch,
     [switch]$EnablePoiCandidateCollectionPatch,
     [switch]$EnableBrainTaskLaunchCachePatch,
+    [switch]$EnableBrainRunningTaskBufferPatch,
     [switch]$EnableEntityQueryProfiler,
     [switch]$PatchComparison,
     [switch]$ProfileOnly,
@@ -57,7 +58,7 @@ $entityCounter = Join-Path $PSScriptRoot 'count-minecraft-entities.py'
 $clientDependencyRoot = Join-Path $benchmarkRoot 'client-deps'
 $entitySpawnCount = $Entities
 $entityGridSpacing = 2
-$patchId = if ($EnablePassengerTrackingPatch) { 'empty-passenger-track-distance' } elseif ($EnableInsideWallLoopPatch) { 'inside-wall-loop' } elseif ($EnablePoiCandidateCollectionPatch) { 'poi-candidate-collection' } elseif ($EnableBrainTaskLaunchCachePatch) { 'brain-task-launch-cache' } else { 'small-box-section-probe' }
+$patchId = if ($EnablePassengerTrackingPatch) { 'empty-passenger-track-distance' } elseif ($EnableInsideWallLoopPatch) { 'inside-wall-loop' } elseif ($EnablePoiCandidateCollectionPatch) { 'poi-candidate-collection' } elseif ($EnableBrainTaskLaunchCachePatch) { 'brain-task-launch-cache' } elseif ($EnableBrainRunningTaskBufferPatch) { 'brain-running-task-buffer' } else { 'small-box-section-probe' }
 $script:checkpointSamples = [Collections.Generic.List[object]]::new()
 $culture = [Globalization.CultureInfo]::InvariantCulture
 if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a-z0-9][a-z0-9_-]{0,39}$') {
@@ -68,9 +69,9 @@ if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
 if ($HeapSnapshotOnly -and -not (Test-Path -LiteralPath $jcmd)) { throw "Java 21 jcmd not found: $jcmd" }
 if ($ProfileOnly -and $HeapSnapshotOnly) { throw 'Choose either Spark profiling or a heap snapshot.' }
 if ($PatchComparison -and ($ProfileOnly -or $HeapSnapshotOnly)) { throw 'PatchComparison cannot be combined with Spark or heap snapshot mode.' }
-$selectedPatchCount = [int]$EnablePassengerTrackingPatch.IsPresent + [int]$EnableInsideWallLoopPatch.IsPresent + [int]$EnablePoiCandidateCollectionPatch.IsPresent + [int]$EnableBrainTaskLaunchCachePatch.IsPresent + [int]$EnableSmallBoxSectionProbe.IsPresent
+$selectedPatchCount = [int]$EnablePassengerTrackingPatch.IsPresent + [int]$EnableInsideWallLoopPatch.IsPresent + [int]$EnablePoiCandidateCollectionPatch.IsPresent + [int]$EnableBrainTaskLaunchCachePatch.IsPresent + [int]$EnableBrainRunningTaskBufferPatch.IsPresent + [int]$EnableSmallBoxSectionProbe.IsPresent
 if ($selectedPatchCount -gt 1) { throw 'Choose one gameplay patch per patch comparison.' }
-if (($EnablePassengerTrackingPatch -or $EnableInsideWallLoopPatch -or $EnablePoiCandidateCollectionPatch -or $EnableBrainTaskLaunchCachePatch) -and -not $PatchComparison) { throw 'Gameplay patch switches require PatchComparison.' }
+if (($EnablePassengerTrackingPatch -or $EnableInsideWallLoopPatch -or $EnablePoiCandidateCollectionPatch -or $EnableBrainTaskLaunchCachePatch -or $EnableBrainRunningTaskBufferPatch) -and -not $PatchComparison) { throw 'Gameplay patch switches require PatchComparison.' }
 if ($ProfilePatchEnabled -and -not $ProfileOnly) { throw 'ProfilePatchEnabled requires ProfileOnly.' }
 if (-not (Test-Path -LiteralPath $artifact)) { throw "Build the 1.21.1 adapter first: $artifact" }
 $artifactSha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -263,7 +264,8 @@ function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickP
                       [bool]$EnablePassengerTrackingPatch = $false,
                       [bool]$EnableInsideWallLoopPatch = $false,
                       [bool]$EnablePoiCandidateCollectionPatch = $false,
-                      [bool]$EnableBrainTaskLaunchCachePatch = $false) {
+                      [bool]$EnableBrainTaskLaunchCachePatch = $false,
+                      [bool]$EnableBrainRunningTaskBufferPatch = $false) {
     $log = Join-Path $outputRoot "$Label.log"
     $stderrLog = Join-Path $outputRoot "$Label-stderr.log"
     Set-Content -LiteralPath $log -Encoding utf8 -Value ''
@@ -288,6 +290,9 @@ function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickP
     }
     if ($EnableBrainTaskLaunchCachePatch) {
         $info.Arguments = "-Dumce.mode=optimized -Dumce.patch.brain-task-launch-cache.enabled=true " + $info.Arguments
+    }
+    if ($EnableBrainRunningTaskBufferPatch) {
+        $info.Arguments = "-Dumce.mode=optimized -Dumce.patch.brain-running-task-buffer.enabled=true " + $info.Arguments
     }
     if ($Passive) { $info.Arguments = "-Dumce.passive=true " + $info.Arguments }
     if ($EnableEntityQueryProfiler) { $info.Arguments = "-Dumce.entityQueryProfiler.enabled=true " + $info.Arguments }
@@ -417,11 +422,12 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $usesUmce = $Condition -ne 'without-umce'
     $passive = $Condition -eq 'umce-passive'
     $patchCondition = $Condition -eq 'patch-enabled'
-    $enableSmallBoxSectionProbe = $usesUmce -and -not $EnablePassengerTrackingPatch.IsPresent -and -not $EnableInsideWallLoopPatch.IsPresent -and -not $EnablePoiCandidateCollectionPatch.IsPresent -and -not $EnableBrainTaskLaunchCachePatch.IsPresent -and ($patchCondition -or ($ProfileOnly -and $ProfilePatchEnabled) -or $EnableSmallBoxSectionProbe.IsPresent)
+    $enableSmallBoxSectionProbe = $usesUmce -and -not $EnablePassengerTrackingPatch.IsPresent -and -not $EnableInsideWallLoopPatch.IsPresent -and -not $EnablePoiCandidateCollectionPatch.IsPresent -and -not $EnableBrainTaskLaunchCachePatch.IsPresent -and -not $EnableBrainRunningTaskBufferPatch.IsPresent -and ($patchCondition -or ($ProfileOnly -and $ProfilePatchEnabled) -or $EnableSmallBoxSectionProbe.IsPresent)
     $enablePassengerTrackingPatchForRun = $usesUmce -and $EnablePassengerTrackingPatch.IsPresent -and $patchCondition
     $enableInsideWallLoopPatchForRun = $usesUmce -and $EnableInsideWallLoopPatch.IsPresent -and $patchCondition
     $enablePoiCandidateCollectionPatchForRun = $usesUmce -and $EnablePoiCandidateCollectionPatch.IsPresent -and $patchCondition
     $enableBrainTaskLaunchCachePatchForRun = $usesUmce -and $EnableBrainTaskLaunchCachePatch.IsPresent -and $patchCondition
+    $enableBrainRunningTaskBufferPatchForRun = $usesUmce -and $EnableBrainRunningTaskBufferPatch.IsPresent -and $patchCondition
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
     $directory = Join-Path $runsRoot $label
@@ -437,7 +443,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
 
     $enableProfilerForRun = $usesUmce -and $EnableTickProfiler.IsPresent
     $enableQueryProfilerForRun = $usesUmce -and $EnableEntityQueryProfiler.IsPresent -and -not $passive
-    $server = Start-Server $directory $label $enableProfilerForRun $enableSmallBoxSectionProbe $passive $enableQueryProfilerForRun $enablePassengerTrackingPatchForRun $enableInsideWallLoopPatchForRun $enablePoiCandidateCollectionPatchForRun $enableBrainTaskLaunchCachePatchForRun
+    $server = Start-Server $directory $label $enableProfilerForRun $enableSmallBoxSectionProbe $passive $enableQueryProfilerForRun $enablePassengerTrackingPatchForRun $enableInsideWallLoopPatchForRun $enablePoiCandidateCollectionPatchForRun $enableBrainTaskLaunchCachePatchForRun $enableBrainRunningTaskBufferPatchForRun
     $clients = $null
     try {
         $clients = Start-StressClients $label
@@ -478,6 +484,17 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             } while ([string]::IsNullOrEmpty($patchStatus) -and [DateTimeOffset]::UtcNow -lt $patchStatusDeadline)
             if ($patchStatus -notmatch 'brain-task-launch-cache=enabled') {
                 throw "The requested Brain task cache patch was not enabled; refusing to mislabel this ablation. Status: $patchStatus"
+            }
+        }
+        if ($EnableBrainRunningTaskBufferPatch -and $patchCondition) {
+            $patchStatusDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+            $patchStatus = ''
+            do {
+                Wait-Server $server 100
+                $patchStatus = ($server.Lines | Where-Object { $_ -match 'patches .*brain-running-task-buffer=' } | Select-Object -Last 1) -join ''
+            } while ([string]::IsNullOrEmpty($patchStatus) -and [DateTimeOffset]::UtcNow -lt $patchStatusDeadline)
+            if ($patchStatus -notmatch 'brain-running-task-buffer=enabled') {
+                throw "The running-task buffer patch was not enabled; refusing to mislabel this ablation. Status: $patchStatus"
             }
         }
         if ($QuickStartup) {
@@ -585,6 +602,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
                 inside_wall_loop_enabled = $enableInsideWallLoopPatchForRun
                 poi_candidate_collection_enabled = $enablePoiCandidateCollectionPatchForRun
                 brain_task_launch_cache_enabled = $enableBrainTaskLaunchCachePatchForRun
+                brain_running_task_buffer_enabled = $enableBrainRunningTaskBufferPatchForRun
                 umce_tick_profiler_enabled = $enableProfilerForRun
                 players_observed = $observedPlayers; pigs_in_seed_world = $entityCounts.pigs; villagers_in_seed_world = $entityCounts.villagers; tnt_in_seed_world = $entityCounts.tnt
                 hopper_rows = $HopperRows; redstone_clock_pairs = $RedstoneClockPairs; idle_clients = [bool]$IdleClients
@@ -786,7 +804,7 @@ $lines.Add('')
 $movement = if ($IdleClients) { 'idle clients' } else { 'clients walking into new chunks' }
 $saveLoad = if ($SaveAllIntervalSeconds -gt 0) { "save-all flush every $SaveAllIntervalSeconds seconds" } else { 'no forced periodic saves' }
 $tickProfilerMode = if ($EnableTickProfiler) { 'enabled by -Dumce.tickProfiler.enabled=true for UMCE runs' } else { 'disabled for UMCE runs (default)' }
-$patchComparisonDescription = if ($EnableBrainTaskLaunchCachePatch) { 'The UMCE condition enables only brain-task-launch-cache (unless an incompatible mod prevents Mixin selection, in which case the run is rejected).' } elseif ($EnableSmallBoxSectionProbe) { 'The UMCE condition explicitly enables small-box-section-probe.' } else { 'UMCE gameplay patches are not explicitly enabled.' }
+$patchComparisonDescription = if ($EnableBrainRunningTaskBufferPatch) { 'The UMCE condition explicitly enables brain-running-task-buffer; rejected startup selection aborts the comparison.' } elseif ($EnableBrainTaskLaunchCachePatch) { 'The UMCE condition enables only brain-task-launch-cache (unless an incompatible mod prevents Mixin selection, in which case the run is rejected).' } elseif ($EnableSmallBoxSectionProbe) { 'The UMCE condition explicitly enables small-box-section-probe.' } else { 'UMCE gameplay patches are not explicitly enabled.' }
 $lines.Add("Minecraft 1.21.1, Fabric Loader 0.16.14, Fabric API 0.116.17+1.21.1, Java 21, fixed seed 21072121, normal terrain. Each run starts from an identical saved world. Both conditions include Fabric API and identical 1.21.1 Mineflayer clients; only UMCE differs. UMCE artifact: $artifactLabel (SHA-256 $artifactSha256). UMCE tick profiler: $tickProfilerMode. $patchComparisonDescription Workload: $Players real TCP/protocol clients (online count checked with /list), $($entityCounts.pigs) pigs, $($entityCounts.villagers) villagers and $($entityCounts.tnt) primed TNT verified from saved Anvil entity data, $($HopperRows * 16) filled hoppers in $HopperRows rows with blocked destination chests, $RedstoneClockPairs paired observer clocks, 8-chunk view/simulation distances, $movement, and $saveLoad. A 16 x 16 chunk region is force-loaded. Each run warms up $WarmupSeconds seconds, then measures $MeasureSeconds seconds; $Repeats paired repeat(s). No Create factory is included: the available Create release for 1.21.1 targets NeoForge, while this adapter and test target Fabric.")
 $lines.Add("JVM args: -Xms$InitialHeap -Xmx$MaximumHeap. TNT fuse during the measured interval: $TntFuseTicks ticks. Baseline and UMCE alternate first position by repeat number.")
 $lines.Add('')
@@ -840,7 +858,7 @@ for ($repeat = 1; $repeat -le $Repeats; $repeat++) {
 $changeMedian = Get-Median ([double[]]$pairedPercentChanges.ToArray())
 $changeStddev = Get-StandardDeviation ([double[]]$pairedPercentChanges.ToArray())
 $lines.Add('')
-$comparisonInterpretation = if ($EnableBrainTaskLaunchCachePatch) { 'The brain-task-launch-cache patch was enabled only in patch-enabled.' } elseif ($EnablePoiCandidateCollectionPatch) { 'The poi-candidate-collection patch was enabled only in patch-enabled.' } elseif ($EnableInsideWallLoopPatch) { 'The inside-wall-loop patch was enabled only in patch-enabled.' } elseif ($EnablePassengerTrackingPatch) { 'The empty-passenger-track-distance patch was enabled only in patch-enabled.' } elseif ($EnableSmallBoxSectionProbe) { 'The small-box-section-probe patch was enabled in the UMCE condition.' } else { 'No gameplay patch was enabled; this measures diagnostics-only overhead.' }
+$comparisonInterpretation = if ($EnableBrainRunningTaskBufferPatch) { 'The brain-running-task-buffer patch was enabled only in patch-enabled.' } elseif ($EnableBrainTaskLaunchCachePatch) { 'The brain-task-launch-cache patch was enabled only in patch-enabled.' } elseif ($EnablePoiCandidateCollectionPatch) { 'The poi-candidate-collection patch was enabled only in patch-enabled.' } elseif ($EnableInsideWallLoopPatch) { 'The inside-wall-loop patch was enabled only in patch-enabled.' } elseif ($EnablePassengerTrackingPatch) { 'The empty-passenger-track-distance patch was enabled only in patch-enabled.' } elseif ($EnableSmallBoxSectionProbe) { 'The small-box-section-probe patch was enabled in the UMCE condition.' } else { 'No gameplay patch was enabled; this measures diagnostics-only overhead.' }
 $lines.Add("Median paired change in rolling MSPT windows (UMCE vs baseline): $($changeMedian.ToString('F2', $culture))%; sample standard deviation across pairs: $($changeStddev.ToString('F2', $culture)) percentage points; valid pairs: $($pairedPercentChanges.Count)/$Repeats. Positive values are slower with UMCE. $comparisonInterpretation")
 $lines.Add('')
 $lines.Add("Saved overworld chunk records: $($seedChunkCounts.saved_overworld_chunks) in the seed world, $($withoutChunkCounts.saved_overworld_chunks) after baseline (+$($withoutChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)), and $($withChunkCounts.saved_overworld_chunks) after UMCE (+$($withChunkCounts.saved_overworld_chunks - $seedChunkCounts.saved_overworld_chunks)).")

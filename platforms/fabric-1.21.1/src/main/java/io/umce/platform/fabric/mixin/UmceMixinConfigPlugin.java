@@ -19,6 +19,7 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
     private static volatile boolean passengerTrackingHookSelected;
     private static volatile boolean insideWallHookSelected;
     private static volatile boolean poiCandidateCollectionHookSelected;
+    private static volatile boolean brainTaskLaunchHookSelected;
     private static volatile boolean passiveStartup;
 
     @Override
@@ -33,12 +34,16 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         insideWallHookSelected = false;
         poiCandidateCollectionHookSelected = !passiveStartup
                 && patchSelected("poi-candidate-collection", "false", configuration);
+        brainTaskLaunchHookSelected = !passiveStartup
+                && !FabricLoader.getInstance().isModLoaded("lithium")
+                && patchSelected("brain-task-launch-cache", "false", configuration);
     }
 
     public static boolean isSmallBoxSectionHookSelected() { return smallBoxSectionHookSelected; }
     public static boolean isPassengerTrackingHookSelected() { return passengerTrackingHookSelected; }
     public static boolean isInsideWallHookSelected() { return insideWallHookSelected; }
     public static boolean isPoiCandidateCollectionHookSelected() { return poiCandidateCollectionHookSelected; }
+    public static boolean isBrainTaskLaunchHookSelected() { return brainTaskLaunchHookSelected; }
     public static boolean isPassiveStartup() { return passiveStartup; }
 
     @Override
@@ -47,6 +52,7 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.endsWith(".EntityTrackerMixin")) return passengerTrackingHookSelected;
         if (mixinClassName.endsWith(".EntityInsideWallMixin")) return insideWallHookSelected;
         if (mixinClassName.endsWith(".FindPointOfInterestTaskMixin")) return poiCandidateCollectionHookSelected;
+        if (mixinClassName.endsWith(".BrainTaskLaunchCacheMixin")) return brainTaskLaunchHookSelected;
         if (mixinClassName.endsWith(".EntityQueryProfilerMixin")) {
             return !passiveStartup && Boolean.getBoolean("umce.entityQueryProfiler.enabled");
         }

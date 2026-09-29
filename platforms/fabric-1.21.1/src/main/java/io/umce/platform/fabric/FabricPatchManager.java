@@ -15,6 +15,8 @@ import io.umce.core.patch.PatchEngine;
 import io.umce.core.patch.PatchOperationResult;
 import io.umce.core.patch.PatchState;
 import io.umce.platform.fabric.optimization.EmptyPassengerTrackDistancePatch;
+import io.umce.platform.fabric.optimization.BrainTaskLaunchCachePatch;
+import io.umce.platform.fabric.optimization.BrainTaskLaunchCachePatchRuntime;
 import io.umce.platform.fabric.optimization.EntityQueryPatchRuntime;
 import io.umce.platform.fabric.optimization.EntityTrackingPatchRuntime;
 import io.umce.platform.fabric.optimization.InsideWallLoopPatch;
@@ -53,6 +55,7 @@ public final class FabricPatchManager implements AutoCloseable {
         register(new EmptyPassengerTrackDistancePatch());
         register(new InsideWallLoopPatch());
         register(new PoiCandidateCollectionPatch());
+        register(new BrainTaskLaunchCachePatch());
 
         try {
             configuration = configStore.loadOrCreate();
@@ -63,6 +66,7 @@ public final class FabricPatchManager implements AutoCloseable {
                         || EmptyPassengerTrackDistancePatch.ID.equals(patchId)
                         || InsideWallLoopPatch.ID.equals(patchId)
                         || PoiCandidateCollectionPatch.ID.equals(patchId)
+                        || BrainTaskLaunchCachePatch.ID.equals(patchId)
                         ? PatchPreference.OFF : PatchPreference.AUTO;
                 defaults.put(patch.getDescriptor().getId(), defaultPreference);
             }
@@ -96,7 +100,8 @@ public final class FabricPatchManager implements AutoCloseable {
         return UmceMixinConfigPlugin.isSmallBoxSectionHookSelected()
                 || UmceMixinConfigPlugin.isPassengerTrackingHookSelected()
                 || UmceMixinConfigPlugin.isInsideWallHookSelected()
-                || UmceMixinConfigPlugin.isPoiCandidateCollectionHookSelected();
+                || UmceMixinConfigPlugin.isPoiCandidateCollectionHookSelected()
+                || UmceMixinConfigPlugin.isBrainTaskLaunchHookSelected();
     }
 
     public synchronized void setMode(String value) throws IOException {
@@ -159,6 +164,7 @@ public final class FabricPatchManager implements AutoCloseable {
 
     public boolean isInsideWallLoopEnabled() { return InsideWallLoopPatchRuntime.isEnabled(); }
     public boolean isPoiCandidateCollectionEnabled() { return PoiCandidateCollectionPatchRuntime.isEnabled(); }
+    public boolean isBrainTaskLaunchCacheEnabled() { return BrainTaskLaunchCachePatchRuntime.isEnabled(); }
 
     @Override public synchronized void close() { engine.close(); }
 
@@ -194,6 +200,7 @@ public final class FabricPatchManager implements AutoCloseable {
         settings.put("passenger-tracking-hook.available", Boolean.toString(UmceMixinConfigPlugin.isPassengerTrackingHookSelected()));
         settings.put("inside-wall-hook.available", Boolean.toString(UmceMixinConfigPlugin.isInsideWallHookSelected()));
         settings.put("poi-collection-hook.available", Boolean.toString(UmceMixinConfigPlugin.isPoiCandidateCollectionHookSelected()));
+        settings.put("brain-task-hook.available", Boolean.toString(UmceMixinConfigPlugin.isBrainTaskLaunchHookSelected()));
         PatchContext context = new PatchContext(adapter, settings);
         HardwareProfile selectionHardware = mode == OptimizationMode.AUTO ? getHardwareProfile() : null;
         for (OptimizationPatch patch : patches) {

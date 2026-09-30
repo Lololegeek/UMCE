@@ -1,6 +1,6 @@
 # Server optimization coverage
 
-This is an implementation inventory, not a list of validated gains. No current gameplay patch has passed all acceptance gates for repeatable MSPT/P95/P99 gains without CPU, behavior, or memory regressions. All default to OFF; one rejected suffocation experiment is hard-disabled.
+This is an implementation inventory, not a list of validated gains. No current gameplay patch has passed all acceptance gates across the required workloads for repeatable MSPT/P95/P99 gains without CPU, behavior, or memory regressions. All default to OFF. The rejected suffocation experiment has been corrected and remains manual-only pending validation.
 
 | System | Current implementation | Remaining work |
 |---|---|---|
@@ -9,7 +9,7 @@ This is an implementation inventory, not a list of validated gains. No current g
 | Villagers / POI | Experimental POI collector | No demonstrated screen gain; POI indexing and villagers remain open |
 | Hoppers / inventories / block entities | Independent indexed empty/full scan candidates | Live loot/transfer/comparator parity and allocation/CPU screening; event-driven polling is not implemented |
 | Player tracking / networking | Empty-passenger tracking-distance candidate | Negative screen retained; packet batching, serialization and compression are not implemented |
-| Collisions / VoxelShape | Behavior-divergent suffocation experiment locked OFF | A behavior-equivalent collision/shape optimization is still needed |
+| Collisions / VoxelShape | Corrected eye-centered suffocation scan; real-block parity tests pass; default OFF and manual-only | No broad compatibility or accepted repeatable gain yet; four-cycle confirmation pending |
 | Pathfinding | No new patch | Profile search-local allocations and immutable data reuse first |
 | Redstone / scheduled ticks / fluids | No patch | Ordering and gameplay parity require targeted profiles and tests |
 | Chunks / loading / unloading / worldgen / lighting | No gameplay patch | Identify bounded snapshot work with precise mutation ownership |

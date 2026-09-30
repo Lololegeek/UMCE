@@ -1,6 +1,6 @@
 # Fabric 1.21.1 inside-wall scan experiment
 
-Status: **original experiment rejected; geometry corrected in source, hook still force-disabled pending full gameplay validation**.
+Status: **original experiment rejected; corrected revision is default OFF and manual-only, with conservative mod compatibility and validation in progress**.
 
 ## Profile that motivated the experiment
 
@@ -8,13 +8,21 @@ The 2026-09-29 Spark profile of 2,000 pigs plus 500 villagers sampled `Entity.is
 
 Minecraft 1.21.1's `BlockPos.stream(Box)` already uses a reusable mutable position. The corrected source uses vanilla's iterable directly, preserving its exact inclusive floored boundaries and encounter order while removing the Stream terminal scan. It retains block suffocation and voxel-shape intersection checks, and constructs the query shape lazily only after a candidate suffocating block is encountered.
 
-Bytecode review traced the original behavior divergence to its query geometry: it expanded the entity's entire body bounding box instead of using vanilla's very thin eye-centered `Box.of(getEyePos(), width * 0.8f, 1.0E-6, width * 0.8f)`. That body expansion included ground-level blocks, explaining unjustified suffocation. The source now uses the vanilla eye box. Geometry tests compare actual vanilla Stream positions, including negative/exact boundaries, and verify ground exclusion. Full block/shape/gameplay parity is still pending, so neither config nor JVM flags can unlock this patch yet.
+Bytecode review traced the original behavior divergence to its query geometry: it expanded the entity's entire body bounding box instead of using vanilla's very thin eye-centered `Box.of(getEyePos(), width * 0.8f, 1.0E-6, width * 0.8f)`. That body expansion included ground-level blocks, explaining unjustified suffocation. The source now uses the vanilla eye box. Geometry tests compare actual vanilla Stream positions, including negative/exact boundaries, and verify ground exclusion.
+
+The new block parity tests compare results and short-circuit read order against the inspected vanilla predicate for eight real block states, four eye positions and two widths (64 combinations), plus explicit floor/eye-height solid-block checks. They use the [official Fabric Loader JUnit launcher](https://github.com/FabricMC/fabric-loader/blob/0.16.14/junit/src/main/java/net/fabricmc/loader/impl/junit/FabricLoaderLauncherSessionListener.java) in SERVER mode; a plain JUnit classloader could not initialize the mapped registries. The corrected implementation uses WrapMethod, preserving the original method when disabled and avoiding cancellation callback objects in the active path.
 
 ## Implementation and toggle
 
-The isolated patch id is `inside-wall-loop`. Its default config preference is `off`, and the Mixin hook is now hard-locked off after the parity failure below. A saved `on` preference or `-Dumce.patch.inside-wall-loop.enabled=true` cannot apply it. The implementation remains in source for diagnosis, but `OptimizationPatch.evaluate` rejects it.
+The isolated patch id is `inside-wall-loop`. Its default config preference is `off` and it is not AUTO-eligible. The corrected revision can be selected explicitly in MANUAL mode before startup, using the existing config or JVM override. Passive and SAFE startup omit the hook. Unknown root mods prevent hook selection, using the same base-environment whitelist as the running-task buffer and inventory experiments. Compatibility with modpacks is not established.
 
 The benchmark runner supports three-way ablation through `-PatchComparison -EnableInsideWallLoopPatch`.
+
+## Corrected revision screening
+
+The September 30 two-cycle screening used 2,000 pigs plus 500 villagers, 12 s warm-up, 15 s measurement per condition, and identical VM-counter diagnostics in all three conditions. The patch improved paired MSPT by 25.94% and 19.29% against passive UMCE, but passive itself was 38.73% and 14.47% slower than baseline. This anomalous passive variation prevents treating the apparent 22.62% paired gain as established benefit. Patch vs baseline was only -2.44% median paired change.
+
+All six saved worlds retained 500 villagers and had no NoAI flags. There were no logged villager suffocation deaths. Saved pig counts ranged from 1,991 to 1,999 across conditions, and the world also contains ambient animals and structures. This is a narrow parity audit, not full gameplay proof. Allocation change also varied by cycle. Detailed results, raw counters and world audits are retained under `inside-wall-v2-screen`. Four more alternating cycles on the same artifact were started for confirmation.
 
 ## Short screening results
 

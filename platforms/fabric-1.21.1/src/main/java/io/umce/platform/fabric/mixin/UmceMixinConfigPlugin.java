@@ -35,7 +35,6 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
                 && patchSelected("small-box-section-probe", "off", configuration);
         passengerTrackingHookSelected = !passiveStartup
                 && patchSelected("empty-passenger-track-distance", "off", configuration);
-        // This experiment diverged from vanilla suffocation behavior, so no config may apply its Mixin.
         insideWallHookSelected = false;
         poiCandidateCollectionHookSelected = !passiveStartup
                 && patchSelected("poi-candidate-collection", "off", configuration);
@@ -45,12 +44,14 @@ public final class UmceMixinConfigPlugin implements IMixinConfigPlugin {
         boolean wantsRunningBuffer = !passiveStartup && patchSelected("brain-running-task-buffer", "off", configuration);
         boolean wantsEmptyScan = !passiveStartup && patchSelected("container-empty-scan", "off", configuration);
         boolean wantsFullScan = !passiveStartup && patchSelected("hopper-full-scan", "off", configuration);
-        String blockers = wantsRunningBuffer || wantsEmptyScan || wantsFullScan ? unverifiedRootMods() : "";
+        boolean wantsInsideWall = !passiveStartup && patchSelected("inside-wall-loop", "off", configuration);
+        String blockers = wantsRunningBuffer || wantsEmptyScan || wantsFullScan || wantsInsideWall ? unverifiedRootMods() : "";
         brainRunningTaskBufferBlockers = blockers;
         inventoryScanBlockers = blockers;
         brainRunningTaskBufferHookSelected = wantsRunningBuffer && blockers.isEmpty();
         containerEmptyScanHookSelected = wantsEmptyScan && blockers.isEmpty();
         hopperFullScanHookSelected = wantsFullScan && blockers.isEmpty();
+        insideWallHookSelected = wantsInsideWall && blockers.isEmpty();
     }
 
     public static boolean isSmallBoxSectionHookSelected() { return smallBoxSectionHookSelected; }

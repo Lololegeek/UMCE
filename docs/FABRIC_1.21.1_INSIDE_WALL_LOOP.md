@@ -1,12 +1,14 @@
 # Fabric 1.21.1 inside-wall scan experiment
 
-Status: **rejected; hook force-disabled because of a gameplay behavior mismatch**.
+Status: **original experiment rejected; geometry corrected in source, hook still force-disabled pending full gameplay validation**.
 
 ## Profile that motivated the experiment
 
 The 2026-09-29 Spark profile of 2,000 pigs plus 500 villagers sampled `Entity.isInsideWall()` in the hot `LivingEntity.tickMovement` path. The 500-villager and mixed profiles, raw Spark files, capture details, and inclusive sample weights are recorded in [the profile report](../benchmark-results/2026-09-29-1.21.1-ai-hotpath-profile.md).
 
-Minecraft 1.21.1's `BlockPos.stream(Box)` already uses one reusable `BlockPos.Mutable`, visits the same inclusive floored box, and iterates x fastest, then z, then y. The experiment replaced the Stream terminal scan with local loops, retained vanilla block suffocation and voxel-shape intersection checks, and hoisted the entity box shape conversion out of the block loop. It does not parallelize gameplay or skip any positions/checks.
+Minecraft 1.21.1's `BlockPos.stream(Box)` already uses a reusable mutable position. The corrected source uses vanilla's iterable directly, preserving its exact inclusive floored boundaries and encounter order while removing the Stream terminal scan. It retains block suffocation and voxel-shape intersection checks, and constructs the query shape lazily only after a candidate suffocating block is encountered.
+
+Bytecode review traced the original behavior divergence to its query geometry: it expanded the entity's entire body bounding box instead of using vanilla's very thin eye-centered `Box.of(getEyePos(), width * 0.8f, 1.0E-6, width * 0.8f)`. That body expansion included ground-level blocks, explaining unjustified suffocation. The source now uses the vanilla eye box. Geometry tests compare actual vanilla Stream positions, including negative/exact boundaries, and verify ground exclusion. Full block/shape/gameplay parity is still pending, so neither config nor JVM flags can unlock this patch yet.
 
 ## Implementation and toggle
 
@@ -24,7 +26,7 @@ The second screen used the same saved workload for baseline, passive UMCE, and p
 | Passive UMCE | 45.100 | 61.245 | 80.770 | 161.6 | 1597.9 | 0 |
 | Patch enabled | 49.000 | 70.230 | 85.143 | 170.3 | 1461.7 | 230 / 238 |
 
-Across the two paired cycles, patch-enabled MSPT was slower than passive UMCE in both: +5.44% and +13.94%, median +9.69%. Mean P95 and P99 were also higher. More critically, the enabled runs logged 230 and 238 villager wall-suffocation deaths while baseline and passive runs logged zero. The implementation has a behavior mismatch that remains unexplained, so performance results are secondary and the Mixin is force-disabled. The full raw output is [the comparison report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-inside-wall-loop-inside-wall-screen-r2-comparison.md) and its adjacent CSV.
+Across the two paired cycles, the original patch-enabled MSPT was slower than passive UMCE in both: +5.44% and +13.94%, median +9.69%. Mean P95 and P99 were also higher. The enabled runs logged 230 and 238 villager wall-suffocation deaths while baseline and passive runs logged zero. These timings belong to the rejected body-box revision, not the corrected source. The full raw output is [the comparison report](../benchmark-results/2026-09-29-1.21.1-patch-ablation-inside-wall-loop-inside-wall-screen-r2-comparison.md) and its adjacent CSV.
 
 A separate one-cycle screen is retained in the same results folder. Do not combine it with the two-cycle result because the run settings differ.
 

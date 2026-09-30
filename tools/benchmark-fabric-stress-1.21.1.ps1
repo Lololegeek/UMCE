@@ -20,6 +20,8 @@ param(
     [string]$UmceJar = '',
     [string]$ResultTag = '',
     [switch]$EnableTickProfiler,
+    [switch]$RecordJfr,
+    [switch]$CaptureVmMetrics,
     [switch]$EnableSmallBoxSectionProbe,
     [switch]$EnablePassengerTrackingPatch,
     [switch]$EnableInsideWallLoopPatch,
@@ -49,6 +51,10 @@ $artifact = if ([string]::IsNullOrWhiteSpace($UmceJar)) { $defaultArtifact } els
 $installer = Join-Path $benchmarkRoot 'fabric-installer-1.1.2.jar'
 $java = Join-Path $JavaHome 'bin\java.exe'
 $jcmd = Join-Path $JavaHome 'bin\jcmd.exe'
+$vmMetricsAgent = Join-Path $root 'build\vm-metrics-agent\umce-vm-metrics-agent.jar'
+if ($CaptureVmMetrics -and -not (Test-Path -LiteralPath $vmMetricsAgent)) {
+    throw 'Build the diagnostic agent first with tools/build-vm-metrics-agent.ps1.'
+}
 $javaToolOptions = $env:JAVA_TOOL_OPTIONS
 if ([string]::IsNullOrWhiteSpace($javaToolOptions)) {
     $javaToolOptions = '--patch-module=java.base=C:\Users\Public\valoria-jdk-patch'
@@ -69,6 +75,7 @@ if (-not [string]::IsNullOrWhiteSpace($ResultTag) -and $ResultTag -notmatch '^[a
 if (-not (Test-Path -LiteralPath $java)) { throw "Java 21 not found: $java" }
 if ($HeapSnapshotOnly -and -not (Test-Path -LiteralPath $jcmd)) { throw "Java 21 jcmd not found: $jcmd" }
 if ($ProfileOnly -and $HeapSnapshotOnly) { throw 'Choose either Spark profiling or a heap snapshot.' }
+if ($RecordJfr -and ($ProfileOnly -or $HeapSnapshotOnly)) { throw 'RecordJfr requires timing measurement mode with explicit measured windows.' }
 if ($PatchComparison -and ($ProfileOnly -or $HeapSnapshotOnly)) { throw 'PatchComparison cannot be combined with Spark or heap snapshot mode.' }
 $selectedPatchCount = [int]$EnablePassengerTrackingPatch.IsPresent + [int]$EnableInsideWallLoopPatch.IsPresent + [int]$EnablePoiCandidateCollectionPatch.IsPresent + [int]$EnableBrainTaskLaunchCachePatch.IsPresent + [int]$EnableBrainRunningTaskBufferPatch.IsPresent + [int]$EnableSmallBoxSectionProbe.IsPresent + [int]($InventoryScanPatch -ne 'none')
 if ($selectedPatchCount -gt 1) { throw 'Choose one gameplay patch per patch comparison.' }
@@ -117,8 +124,27 @@ if (-not (Test-Path -LiteralPath (Join-Path $templateRoot 'fabric-server-launch.
     if ($LASTEXITCODE -ne 0) { throw 'Fabric 1.21.1 server installation failed.' }
 }
 
+function Assert-BenchmarkPath([string]$Target) {
+    $basePath = [IO.Path]::GetFullPath($benchmarkRoot).TrimEnd('\')
+    $targetPath = [IO.Path]::GetFullPath($Target)
+    if (-not $targetPath.StartsWith($basePath + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing filesystem cleanup outside benchmark workspace: $targetPath"
+    }
+    $cursor = $targetPath
+    while ($cursor -and $cursor.Length -ge $basePath.Length) {
+        if (Test-Path -LiteralPath $cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing benchmark cleanup through a reparse point: $cursor"
+            }
+        }
+        $cursor = Split-Path -Parent $cursor
+    }
+}
+
 function Write-ServerConfig([string]$Directory) {
     $mods = Join-Path $Directory 'mods'
+    Assert-BenchmarkPath $mods
     New-Item -ItemType Directory -Force $mods | Out-Null
     Get-ChildItem -LiteralPath $mods -Filter '*.jar' -ErrorAction SilentlyContinue | Remove-Item -Force
     Copy-Item -LiteralPath $apiJar -Destination (Join-Path $mods 'fabric-api.jar') -Force
@@ -276,6 +302,12 @@ function Start-Server([string]$Directory, [string]$Label, [bool]$EnableUmceTickP
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $java
     $info.Arguments = "-Xms$InitialHeap -Xmx$MaximumHeap -jar fabric-server-launch.jar nogui"
+    if ($RecordJfr -and $Label -ne 'stress-world-setup') {
+        $info.Arguments = '-XX:StartFlightRecording=name=umce,settings=profile,filename=umce-run.jfr,dumponexit=true ' + $info.Arguments
+    }
+    if ($CaptureVmMetrics -and $Label -ne 'stress-world-setup') {
+        $info.Arguments = '-javaagent:"' + $vmMetricsAgent + '" ' + $info.Arguments
+    }
     if ($EnableUmceTickProfiler) {
         $info.Arguments = "-Dumce.tickProfiler.enabled=true " + $info.Arguments
     }
@@ -438,11 +470,13 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $runTag = if ([string]::IsNullOrWhiteSpace($ResultTag)) { '' } else { "-$ResultTag" }
     $label = "$Condition$runTag-r$Repeat"
     $directory = Join-Path $runsRoot $label
+    Assert-BenchmarkPath $directory
     if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }
     New-Item -ItemType Directory -Force $directory | Out-Null
     Copy-Item -Path (Join-Path $templateRoot '*') -Destination $directory -Recurse -Force
     Write-ServerConfig $directory
     $destinationWorld = Join-Path $directory 'world'
+    Assert-BenchmarkPath $destinationWorld
     if (Test-Path -LiteralPath $destinationWorld) { Remove-Item -LiteralPath $destinationWorld -Recurse -Force }
     New-Item -ItemType Directory -Force $destinationWorld | Out-Null
     Copy-Item -Path (Join-Path $WorldPath '*') -Destination $destinationWorld -Recurse -Force
@@ -452,6 +486,7 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
     $enableQueryProfilerForRun = $usesUmce -and $EnableEntityQueryProfiler.IsPresent -and -not $passive
     $server = Start-Server $directory $label $enableProfilerForRun $enableSmallBoxSectionProbe $passive $enableQueryProfilerForRun $enablePassengerTrackingPatchForRun $enableInsideWallLoopPatchForRun $enablePoiCandidateCollectionPatchForRun $enableBrainTaskLaunchCachePatchForRun $enableBrainRunningTaskBufferPatchForRun $inventoryScanPatchForRun
     $clients = $null
+    $runSucceeded = $false
     try {
         $clients = Start-StressClients $label
         for ($index = 0; $index -lt $Players; $index++) {
@@ -615,6 +650,10 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
             $wall = [Math]::Max(1.0, ($now - $previousAt).TotalMilliseconds)
             $samples.Add([pscustomobject]@{
                 condition = $Condition; repeat = $Repeat; time_utc = $sampleAt.ToString('o')
+                measurement_start_utc = $measurementStartedAt.ToString('o')
+                measurement_end_utc = $null
+                jfr_recording_enabled = [bool]$RecordJfr
+                vm_metrics_enabled = [bool]$CaptureVmMetrics
                 artifact_sha256 = if ($usesUmce) { $artifactSha256 } else { $null }
                 small_box_section_probe_enabled = $enableSmallBoxSectionProbe
                 inside_wall_loop_enabled = $enableInsideWallLoopPatchForRun
@@ -641,13 +680,43 @@ function Measure-Run([string]$Condition, [int]$Repeat, [string]$WorldPath) {
         }
         $measurementDuration = [Math]::Max(1.0, ([DateTimeOffset]::UtcNow - $measurementStartedAt).TotalMilliseconds)
         $runCpuPercent = (($server.Process.TotalProcessorTime.TotalMilliseconds - $measurementStartedCpu) / $measurementDuration) * 100.0
-        foreach ($sample in $samples) { $sample.process_cpu_percent_one_core = $runCpuPercent }
+        $measurementEndedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        foreach ($sample in $samples) {
+            $sample.process_cpu_percent_one_core = $runCpuPercent
+            $sample.measurement_end_utc = $measurementEndedAt
+        }
+        if ($RecordJfr) {
+            $dumpResponse = & $jcmd $server.Process.Id JFR.dump 'name=umce' 'filename=umce-run.jfr' 2>&1
+            $dumpExitCode = $LASTEXITCODE
+            Set-Content -LiteralPath (Join-Path $outputRoot "$label-jfr-dump.txt") -Value ($dumpResponse -join "`n") -Encoding utf8
+            if ($dumpExitCode -ne 0) {
+                throw "JFR.dump failed for $label; no allocation/GC result may be inferred: $($dumpResponse -join ' ')"
+            }
+        }
         foreach ($sample in $samples) { $script:checkpointSamples.Add($sample) }
         Save-PartialSamples $script:checkpointSamples
         if ($usesUmce) { Send-Command $server 'umce status' }
         if (-not $QuickStartup) { Wait-Server $server 1000 }
+        $runSucceeded = $true
         $samples
-    } finally { Stop-StressClients $clients; Stop-Server $server }
+    } finally {
+        Stop-StressClients $clients
+        Stop-Server $server
+        if ($RecordJfr -and $runSucceeded) {
+            $recording = Join-Path $directory 'umce-run.jfr'
+            if (-not (Test-Path -LiteralPath $recording) -or (Get-Item -LiteralPath $recording).Length -le 68) {
+                throw "The JFR recording is missing or empty for $label; no allocation/GC result may be inferred."
+            }
+            Copy-Item -LiteralPath $recording -Destination (Join-Path $outputRoot "$label.jfr") -Force
+        }
+        if ($CaptureVmMetrics -and $runSucceeded) {
+            $capture = Join-Path $directory 'umce-vm-metrics.csv'
+            if (-not (Test-Path -LiteralPath $capture) -or @(Get-Content -LiteralPath $capture).Count -lt 2) {
+                throw "VM metric capture is missing or empty for $label."
+            }
+            Copy-Item -LiteralPath $capture -Destination (Join-Path $outputRoot "$label-vm-metrics.csv") -Force
+        }
+    }
 }
 
 function Get-Median([double[]]$Values) {
@@ -679,11 +748,13 @@ function Save-PartialSamples([Collections.Generic.List[object]]$Samples) {
 }
 
 # Create one immutable world with the selected stress features.
+Assert-BenchmarkPath $seedRoot
 if (Test-Path -LiteralPath $seedRoot) { Remove-Item -LiteralPath $seedRoot -Recurse -Force }
 New-Item -ItemType Directory -Force $seedRoot | Out-Null
 Copy-Item -Path (Join-Path $templateRoot '*') -Destination $seedRoot -Recurse -Force
 Write-ServerConfig $seedRoot
 $worldPath = Join-Path $seedRoot 'world'
+Assert-BenchmarkPath $worldPath
 if (Test-Path -LiteralPath $worldPath) { Remove-Item -LiteralPath $worldPath -Recurse -Force }
 New-Item -ItemType Directory -Force $worldPath | Out-Null
 $batchCount = Write-StressDatapack $worldPath
@@ -742,6 +813,8 @@ if ($PatchComparison) {
     $entityLayout = if ($patchId -eq 'small-box-section-probe' -or $entityCounts.pigs -gt 0) { "; pigs use a $entityGridSpacing-block grid" } else { '' }
     $lines.Add("Patch: ``$patchId``; baseline has no UMCE, umce-passive loads UMCE with all gameplay Mixins omitted, and patch-enabled loads UMCE with this patch only. Workload: $Players clients, $($entityCounts.pigs) pigs$entityLayout, $($entityCounts.villagers) villagers, $HopperRows hopper rows. Heap: -Xms$InitialHeap -Xmx$MaximumHeap. Each cycle runs all conditions in an alternating order; warmup $WarmupSeconds s, measurement $MeasureSeconds s per condition, $Repeats cycles. Tick profiler: $(if ($EnableTickProfiler) { 'enabled' } else { 'disabled' }).")
     $lines.Add("UMCE artifact SHA-256: $artifactSha256")
+    $lines.Add("JFR profile recording: $(if ($RecordJfr) { 'enabled; instrumentation affects timing, compare only within this recording batch' } else { 'disabled' }).")
+    $lines.Add("VM counter diagnostic agent: $(if ($CaptureVmMetrics) { 'enabled equally for all conditions; use explicit measurement windows for allocations/GC' } else { 'disabled' }).")
     $lines.Add('')
     $lines.Add('| Condition | Windows | Median rolling MSPT | Mean P50 | Mean P95 | Mean P99 | CPU (% one core) | Working set MiB |')
     $lines.Add('|---|---:|---:|---:|---:|---:|---:|---:|')

@@ -1,0 +1,15 @@
+{
+  "counter_samples": 15,
+  "counter_interval_seconds": 14.053034,
+  "counter_start_utc": "2026-09-29T20:29:10.615072300Z",
+  "counter_end_utc": "2026-09-29T20:29:24.668106100Z",
+  "server_allocated_bytes": 4399942432,
+  "server_allocation_mib_per_second": 298.59118614987005,
+  "observed_all_threads_allocation_mib_per_second": 301.62692916744965,
+  "gc_collections": 6,
+  "gc_collection_time_ms": 40,
+  "limits": "Counters span only the reported sub-window. All-thread allocations can miss threads born and terminated between samples. GC collection time is the MXBean counter, not individual pause latency. Diagnostic agent adds equal monitoring work to each condition.",
+  "condition": "patch-enabled",
+  "repeat": 1,
+  "capture": "patch-enabled-brain-buffer-v2-metrics-r1-vm-metrics.csv"
+}

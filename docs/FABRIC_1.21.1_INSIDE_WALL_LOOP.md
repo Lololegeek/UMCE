@@ -1,6 +1,6 @@
 # Fabric 1.21.1 inside-wall scan experiment
 
-Status: **original experiment rejected; corrected revision is default OFF and manual-only, with conservative mod compatibility and validation in progress**.
+Status: **original experiment rejected; corrected revision passed narrow vanilla parity checks but failed four-cycle performance acceptance. Default OFF, manual-only, experimental**.
 
 ## Profile that motivated the experiment
 
@@ -22,7 +22,25 @@ The benchmark runner supports three-way ablation through `-PatchComparison -Enab
 
 The September 30 two-cycle screening used 2,000 pigs plus 500 villagers, 12 s warm-up, 15 s measurement per condition, and identical VM-counter diagnostics in all three conditions. The patch improved paired MSPT by 25.94% and 19.29% against passive UMCE, but passive itself was 38.73% and 14.47% slower than baseline. This anomalous passive variation prevents treating the apparent 22.62% paired gain as established benefit. Patch vs baseline was only -2.44% median paired change.
 
-All six saved worlds retained 500 villagers and had no NoAI flags. There were no logged villager suffocation deaths. Saved pig counts ranged from 1,991 to 1,999 across conditions, and the world also contains ambient animals and structures. This is a narrow parity audit, not full gameplay proof. Allocation change also varied by cycle. Detailed results, raw counters and world audits are retained under `inside-wall-v2-screen`. Four more alternating cycles on the same artifact were started for confirmation.
+All six saved worlds retained 500 villagers and had no NoAI flags. There were no logged villager suffocation deaths. Saved pig counts ranged from 1,991 to 1,999 across conditions, and the world also contains ambient animals and structures. This is a narrow parity audit, not full gameplay proof. Allocation change also varied by cycle. Detailed results, raw counters and world audits are retained under `inside-wall-v2-screen`.
+
+## Four-cycle confirmation: not accepted
+
+Four alternating cycles on the same artifact and settings completed. Paired MSPT changes against passive were -3.252%, +2.439%, +14.919%, and +0.476%: median **+1.46%**, better in only **1/4** pairs. The preliminary speed gain did not reproduce.
+
+| Median of per-run values | Passive | Patch |
+|---|---:|---:|
+| MSPT ms | 37.050 | 40.000 |
+| Rolling P95 ms | 48.320 | 52.463 |
+| Rolling P99 ms | 56.449 | 62.728 |
+| CPU % one core | 91.183 | 96.356 |
+| Working set MiB | 1860.229 | 1883.457 |
+| Server-thread allocation MiB/s | 293.395 | 280.063 |
+| GC collection time ms | 36.500 | 30.000 |
+
+Server-thread allocation decreased in all four pairs (-5.812, -10.387, -22.421, -18.127 MiB/s). The ratio of median rates is approximately -4.54%, but neither RAM nor speed acceptance follows: CPU and tick tails increased, and working set was higher. GC figures are sampled MXBean totals, not individual pause timings. The baseline/passive comparison also remained noisy. No statistical significance or zero passive overhead is established.
+
+The [complete timing and VM report](../benchmark-results/2026-09-30-inside-wall-v2-validation-vm-comparison.md) records counter sub-windows in its adjacent JSON. All twelve saved-world audits retained 500 villagers with no NoAI flags. Preserve the experiment for further targeted profiling, but keep it OFF and exclude it from AUTO. Broad gameplay/modpack compatibility remains unverified.
 
 ## Short screening results
 
@@ -42,6 +60,6 @@ The [JFR-labeled one-cycle screen](../benchmark-results/2026-09-29-1.21.1-patch-
 
 ## Measurement limits
 
-These screens collected MSPT, P50/P95/P99, process CPU, and working set. They did **not** measure allocation rate, object-allocation samples, or GC pauses. A separate JFR-labeled run has one-cycle timing output, but its recording was empty, so it is not allocation or GC evidence and is not pooled with the other screenings. See the [diagnostic note](../benchmark-results/2026-09-29-1.21.1-inside-wall-allocation-gc-diagnostic.md). The Spark sampling profile is not allocation or GC evidence. No performance claim is made for RAM or allocations; the working-set difference is noisy and is not treated as a patch effect.
+The original rejected screens did **not** measure allocation rate or GC pauses. Their JFR output was empty and is not pooled with the corrected revision. See the [diagnostic note](../benchmark-results/2026-09-29-1.21.1-inside-wall-allocation-gc-diagnostic.md). The corrected revision uses identical external VM-counter diagnostics in every condition; limits are described in [benchmark metrics](BENCHMARK_METRICS.md). Spark sampling is not allocation evidence.
 
-Keep the hook force-disabled. Reconsider the experiment only after its vanilla behavior parity is fixed and covered by tests, followed by allocation-aware profiling and a workload that repeatedly demonstrates a net gain against passive UMCE without tail-latency or CPU regression.
+Keep the hook disabled by default. Reconsider promotion only after a workload repeatedly demonstrates a net gain against passive UMCE without tail-latency or CPU regression.

@@ -1,6 +1,6 @@
-# Inventory scan candidates: compiled, awaiting live validation
+# Inventory scan candidates: screened, default OFF
 
-Two independent patches are implemented for Fabric 1.21.1. Both default to OFF and are excluded from AUTO. They are candidates for reducing iterator allocation, not measured performance improvements.
+Two independent patches are implemented for Fabric 1.21.1. Both default to OFF and are excluded from AUTO. Neither has demonstrated a repeatable overall performance improvement.
 
 | Patch | Changes | Vanilla details preserved |
 |---|---|---|
@@ -37,16 +37,23 @@ Swap ON/OFF to isolate the other candidate. Both defaults are OFF, including in 
 
 Compilation, runtime/platform unit tests, and Fabric remapJar passed. Three new common-scanner tests cover order, short-circuit behavior without requesting an iterator, empty lists, in-place changes between calls, and the exact-equality predicate contract. Remapped Mixin selectors were inspected in the generated JAR.
 
-Live Mixin loading, loot/transfer/comparator parity, performance, allocations, and GC have not been validated. These patches remain experimental. Their added activation checks and predicate calls may outweigh iterator savings; the next step is an isolated screen, followed by rejection or further validation based on measured results.
+Live Mixin activation was checked in the benchmark harness. Full loot/transfer/comparator parity and modpack compatibility remain unverified.
 
-## Prepared commands: not executed
+## Screen and confirmation
 
-```powershell
-.\tools\benchmark-fabric-stress-1.21.1.ps1 `
-  -PatchComparison -InventoryScanPatch container-empty-scan `
-  -Players 0 -Entities 0 -Villagers 0 -HopperRows 64 -RedstoneClockPairs 0 `
-  -WarmupSeconds 8 -MeasureSeconds 12 -Repeats 2 -QuickStartup `
-  -InitialHeap 2G -MaximumHeap 2G -ResultTag container-empty-screen
-```
+The two-cycle `container-screen-1` screen regressed paired MSPT by a median **+7.14%** (better 0/2); CPU increased from 14.4% to 19.3% one core. No VM allocation counters were collected. Keep OFF.
 
-Repeat separately with `-InventoryScanPatch hopper-full-scan` and a different ResultTag. The script requires one candidate per comparison, records the selected inventory patch in CSV metadata, and aborts if status does not show it enabled. Baseline and passive runs select neither patch. A timing screen alone does not validate loot, transfers, allocations, or GC; those need separate live checks.
+The early hopper screen appeared faster (-7.50%, better 2/2), with worse CPU and P99, so it required confirmation. The four-cycle `hopper-full-validation` batch used 1,024 hoppers, 12 s warm-up, 15 s measurement and identical VM diagnostics. Its median paired MSPT change was **0.00%**, with no faster pair (0%, 0%, 0%, +7.14%).
+
+| Median of per-run values | Passive | Hopper patch |
+|---|---:|---:|
+| MSPT ms | 1.400 | 1.400 |
+| Rolling P95 ms | 2.814 | 2.415 |
+| Rolling P99 ms | 7.513 | 7.822 |
+| CPU % one core | 7.728 | 9.702 |
+| Working set MiB | 1076.152 | 1040.445 |
+| Server-thread allocation MiB/s | 6.258 | 6.205 |
+
+Allocation changes have mixed signs; no GC collection occurred in the sampled counter sub-windows. Working-set differences do not establish RAM savings. The generator fills only hopper slot 0 with 64 stone initially; destination chests have all 27 slots full. Hopper contents can redistribute during runs. This tests the generated farm, not a fixture with every hopper slot permanently full.
+
+Keep both patches experimental, default OFF, excluded from AUTO. The [complete hopper timing and VM report](../benchmark-results/2026-09-30-hopper-full-vm-comparison.md) and [original screening review](../benchmark-results/2026-09-30-candidate-screening-review.md) preserve rejected data. Further optimization should target a demonstrable hot path rather than promoting these scan substitutions.

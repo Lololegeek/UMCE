@@ -76,12 +76,12 @@ not a current performance optimization.
 | --- | --- |
 | `small-box-section-probe` | Manual-only and default `off`. On exactly 10,000 pigs it improved aggregate P95/P99, but median MSPT improved in only 3/4 pairs and CPU rose by 4.4 percentage points vs passive; keep it opt-in. |
 | `empty-passenger-track-distance` | Manual-only and default `off`. On 100 idle clients it was slower than passive in 3/4 pairs (+4.85% median MSPT); keep it off. |
-| `inside-wall-loop` | Original body-box revision rejected. Corrected eye-box revision passes block parity tests and is manual-only/default `off`, with unknown root mods blocked. Screening is promising but noisy; [validation details](FABRIC_1.21.1_INSIDE_WALL_LOOP.md). |
+| `inside-wall-loop` | Original body-box revision rejected. Corrected eye-box revision passes block parity tests and is manual-only/default `off`, with unknown root mods blocked. Four-cycle confirmation reduced allocations but failed speed/CPU/tail acceptance; [validation details](FABRIC_1.21.1_INSIDE_WALL_LOOP.md). |
 | `poi-candidate-collection` | Experimental and default `off`; no gain in the short screen. |
 | `brain-task-launch-cache` | Experimental and default `off`; lost all four paired MSPT comparisons across two screens. |
-| `brain-running-task-buffer` | New implementation, default `off`, not eligible for AUTO. Reuses internal running-task snapshot storage with bounded retention. No live test or benchmark yet; unknown root mods block selection. See [implementation and pending validation](FABRIC_1.21.1_BRAIN_RUNNING_TASK_BUFFER.md). |
-| `container-empty-scan` | Experimental, default `off`, excluded from AUTO. Indexed current-stack emptiness scan; unknown root mods block selection. [Implementation and pending validation](FABRIC_1.21.1_INVENTORY_SCANS.md). |
-| `hopper-full-scan` | Experimental, default `off`, excluded from AUTO. Indexed hopper fullness scan with vanilla exact equality; live parity and measurements pending. |
+| `brain-running-task-buffer` | New implementation, default `off`, not eligible for AUTO. Reuses internal running-task snapshot storage with bounded retention. Revised two-cycle screen regressed MSPT +3.40%; unknown root mods block selection. See [implementation and measured rejection](FABRIC_1.21.1_BRAIN_RUNNING_TASK_BUFFER.md). |
+| `container-empty-scan` | Experimental, default `off`, excluded from AUTO. Indexed current-stack emptiness scan; unknown root mods block selection. [Implementation and measured rejection](FABRIC_1.21.1_INVENTORY_SCANS.md). |
+| `hopper-full-scan` | Experimental, default `off`, excluded from AUTO. Indexed hopper fullness scan with vanilla exact equality; four-cycle confirmation had no MSPT gain and higher CPU; broad live parity remains unverified. |
 
 The entity patch directly probes vanilla's existing `trackingSections` map. It
 does not build or maintain a second index and adds no entity insert/remove/move

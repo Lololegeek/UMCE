@@ -18,6 +18,8 @@ python tools/summarize_vm_metrics.py <capture.csv> `
 
 The summary uses only counters inside the measured window and reports its actual sub-window duration. Server-thread allocated bytes are counter differences for that sub-window. The all-thread observed total can miss threads born and terminated between samples. GC collection time is an MXBean total, not a precise measurement of individual stop-the-world pauses. Unsupported counters remain null. Monitoring overhead is present in every instrumented condition; compare instrumented conditions with each other, not directly against uninstrumented screens.
 
+For a complete three-condition batch, `summarize_benchmark_vm_metrics.py --samples <samples.csv> --tag <tag> --repeats <expected-count> --output <comparison.json>` produces JSON and Markdown with per-run counter windows, medians of run values and paired changes. It rejects incomplete condition sets or mixed artifact hashes. Its tick statistics are explicitly labelled as rolling-window statistics, not independent tick observations.
+
 ## JFR limitation observed on this host
 
 The optional `-RecordJfr` mode starts a profile recording in each measured server and explicitly dumps it after timing. It requires a nonempty output. On the September 29 JDK 21 hopper diagnostic attempts, startup reported an active recording but both exit dumping and explicit `jcmd JFR.dump` produced zero bytes. The runs were rejected and their partial timing samples are retained. There are no valid JFR allocation-class or pause results from those attempts.

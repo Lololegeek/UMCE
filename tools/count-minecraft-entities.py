@@ -19,7 +19,7 @@ def read_string(data: bytes, offset: int) -> tuple[str, int]:
 
 def read_payload(data: bytes, offset: int, tag: int):
     if tag == 1:
-        return data[offset] != 0, offset + 1
+        return struct.unpack_from(">b", data, offset)[0], offset + 1
     if tag == 2:
         return struct.unpack_from(">h", data, offset)[0], offset + 2
     if tag == 3:

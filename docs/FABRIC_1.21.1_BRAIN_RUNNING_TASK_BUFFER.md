@@ -1,6 +1,6 @@
 # Running-task snapshot buffer: revision and validation
 
-Patch ID: `brain-running-task-buffer`. Status: experimental, default OFF, not eligible for AUTO. The initial implementation regressed in a two-cycle screen; the revised storage is awaiting a complete validation batch.
+Patch ID: `brain-running-task-buffer`. Status: experimental, default OFF, not eligible for AUTO. The initial implementation regressed in a two-cycle screen; the revised storage also failed its complete two-cycle screen.
 
 ## Target and evidence
 
@@ -40,23 +40,23 @@ Or use `-Dumce.mode=manual -Dumce.patch.brain-running-task-buffer.enabled=true` 
 
 ` :runtime:test :platforms:fabric-1.21.1:test :platforms:fabric-1.21.1:remapJar ` completed successfully. Four new common-buffer tests cover snapshot ordering/identity/duplicates, source changes, nested acquisition, reference cleanup, exception cleanup, retention bounds, and ownership misuse. The generated JAR's Mixin selectors were inspected and correctly remapped to the 1.21.1 intermediary names. The benchmark script was parsed without executing it.
 
-Live Mixin application, gameplay parity, MSPT, P95/P99, CPU, RAM, allocations, and GC remain unverified. No performance recommendation follows from compilation or unit tests.
+Live Mixin activation and timing/VM-counter measurements subsequently completed. Broad gameplay parity and modpack compatibility remain unverified. No performance recommendation follows from compilation or unit tests.
 
 The original storage revision was subsequently loaded in a live server and screened on 2,000 pigs plus 500 villagers. It lost both paired MSPT comparisons (+3.21% median vs passive) and had a higher mean P95. This was a rejection screen, not evidence of benefit. The revised implementation retains vanilla fastutil ObjectArrayList iteration and clearing through a bounded common lease. Its first instrumented cycle completed but the next cycle was interrupted; [screening review](../benchmark-results/2026-09-30-candidate-screening-review.md) distinguishes complete and partial data. Neither revision is promoted.
 
 The startup plugin also now uses the valid preference `off` for missing experimental-patch entries, matching the patch manager's defaults. The previous string `false` could select unnecessary hooks in a fresh `performance` configuration.
 
-## Next step: not executed
+## Complete revised-storage screen
 
-Run the three-condition screening with only this patch selected. Begin with two alternating cycles; expand to at least four on the same final artifact only if the screen is promising. Verify live Mixin activation and gameplay outcomes before interpreting timings. Separately obtain valid allocation and GC recordings before claiming less memory pressure.
+The `brain-buffer-v2-complete` batch used 2,000 pigs and 500 villagers, 12 s warm-up, 15 s measurement, two alternating cycles, and identical external VM diagnostics. Paired MSPT changed +1.08% and +5.71% against passive (median **+3.40%**, better 0/2).
 
-```powershell
-.\tools\benchmark-fabric-stress-1.21.1.ps1 `
-  -PatchComparison -EnableBrainRunningTaskBufferPatch `
-  -Players 0 -Entities 2000 -Villagers 500 `
-  -HopperRows 0 -RedstoneClockPairs 0 `
-  -WarmupSeconds 8 -MeasureSeconds 12 -Repeats 2 -QuickStartup `
-  -InitialHeap 2G -MaximumHeap 2G -ResultTag brain-running-buffer-screen
-```
+| Median of per-run values | Passive | Patch |
+|---|---:|---:|
+| MSPT ms | 37.275 | 38.550 |
+| Rolling P95 ms | 48.156 | 50.412 |
+| Rolling P99 ms | 53.658 | 57.302 |
+| CPU % one core | 90.711 | 91.402 |
+| Working set MiB | 1890.838 | 1892.289 |
+| Server-thread allocation MiB/s | 292.606 | 292.031 |
 
-This command is prepared only. No report or performance numbers are provided because the user requested stopping before benchmarks.
+Allocation changes had opposite signs between cycles; there is no repeatable allocation gain in this screen. Keep the revised implementation experimental and OFF. The partial earlier batch is not pooled with this complete batch. See [complete timing and VM counters](../benchmark-results/2026-09-30-brain-buffer-v2-vm-comparison.md).

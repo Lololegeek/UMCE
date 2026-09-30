@@ -16,7 +16,9 @@ Current release target: **0.1.0-alpha.2**.
 The active server adapter currently targets Fabric on Minecraft 1.21.1 and
 provides tick diagnostics and experimental gameplay patches, all disabled by
 default. The new [running-task buffer](docs/FABRIC_1.21.1_BRAIN_RUNNING_TASK_BUFFER.md)
-is implemented and compiled, with live testing and benchmarking still pending. UMCE's
+has been built and benchmarked, but did not pass performance acceptance. The
+[September 30 validation report](benchmark-results/2026-09-30-candidate-validation-review.md)
+records the latest three-condition comparisons; none of these candidates is promoted. UMCE's
 target is every stable Java release from 1.6.4 onward, including future release
 lines, with loader- and generation-specific adapters. The official version
 inventory is refreshed from Mojang metadata; inventory entries do not imply

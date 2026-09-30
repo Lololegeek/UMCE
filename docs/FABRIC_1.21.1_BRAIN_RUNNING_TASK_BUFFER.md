@@ -1,6 +1,6 @@
-# Running-task snapshot buffer: implementation awaiting benchmarks
+# Running-task snapshot buffer: revision and validation
 
-Patch ID: `brain-running-task-buffer`. Status: experimental, default OFF, not eligible for AUTO. No benchmark or live server run was performed for this implementation.
+Patch ID: `brain-running-task-buffer`. Status: experimental, default OFF, not eligible for AUTO. The initial implementation regressed in a two-cycle screen; the revised storage is awaiting a complete validation batch.
 
 ## Target and evidence
 
@@ -10,7 +10,7 @@ This candidate targets that short-lived list and its backing storage. It does no
 
 ## Implementation
 
-- Shared Java 8 runtime utility: `BoundedSnapshotBuffer<T>`, independent of Minecraft, Fabric, and GPU APIs. Other adapters can reuse the storage utility after implementing and validating their own hooks.
+- Shared Java 8 runtime utility: `ScopedReusableList<T, L>`, independent of Minecraft, Fabric, and GPU APIs. It reuses the adapter's original list implementation rather than substituting an AbstractList. Other adapters can reuse the lease utility after implementing and validating their own hooks. The original `BoundedSnapshotBuffer` experiment remains in source.
 - Fabric 1.21.1 Mixin wraps vanilla `Brain.updateTasks` and substitutes only its internal running-task snapshot.
 - Snapshot contents are rebuilt before each update in the same nested map/set order, preserving duplicate occurrences and reference identity. Task status is inspected at capture time, as in vanilla.
 - Vanilla `updateTasks` still performs task ticks, using its original world time and task order. A task which changes another task's status does not silently change the already captured snapshot.
@@ -41,6 +41,8 @@ Or use `-Dumce.mode=manual -Dumce.patch.brain-running-task-buffer.enabled=true` 
 ` :runtime:test :platforms:fabric-1.21.1:test :platforms:fabric-1.21.1:remapJar ` completed successfully. Four new common-buffer tests cover snapshot ordering/identity/duplicates, source changes, nested acquisition, reference cleanup, exception cleanup, retention bounds, and ownership misuse. The generated JAR's Mixin selectors were inspected and correctly remapped to the 1.21.1 intermediary names. The benchmark script was parsed without executing it.
 
 Live Mixin application, gameplay parity, MSPT, P95/P99, CPU, RAM, allocations, and GC remain unverified. No performance recommendation follows from compilation or unit tests.
+
+The original storage revision was subsequently loaded in a live server and screened on 2,000 pigs plus 500 villagers. It lost both paired MSPT comparisons (+3.21% median vs passive) and had a higher mean P95. This was a rejection screen, not evidence of benefit. The revised implementation retains vanilla fastutil ObjectArrayList iteration and clearing through a bounded common lease. Its first instrumented cycle completed but the next cycle was interrupted; [screening review](../benchmark-results/2026-09-30-candidate-screening-review.md) distinguishes complete and partial data. Neither revision is promoted.
 
 The startup plugin also now uses the valid preference `off` for missing experimental-patch entries, matching the patch manager's defaults. The previous string `false` could select unnecessary hooks in a fresh `performance` configuration.
 

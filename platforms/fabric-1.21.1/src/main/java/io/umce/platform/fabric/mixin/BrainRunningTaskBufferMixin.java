@@ -3,7 +3,8 @@ package io.umce.platform.fabric.mixin;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import io.umce.platform.fabric.optimization.BrainRunningTaskBufferPatchRuntime;
-import io.umce.runtime.collection.BoundedSnapshotBuffer;
+import io.umce.runtime.collection.ScopedReusableList;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.ai.brain.Activity;
 import net.minecraft.entity.ai.brain.Brain;
@@ -25,7 +26,7 @@ import java.util.Set;
 @Mixin(Brain.class)
 public abstract class BrainRunningTaskBufferMixin<E extends LivingEntity> {
     @Shadow @Final private Map<Integer, Map<Activity, Set<Task<? super E>>>> tasks;
-    @Unique private BoundedSnapshotBuffer<Task<? super E>> umce$runningSnapshot;
+    @Unique private ScopedReusableList<Task<? super E>, ObjectArrayList<Task<? super E>>> umce$runningSnapshot;
     @Unique private int umce$updateDepth;
 
     @WrapMethod(method = "updateTasks")
@@ -38,8 +39,11 @@ public abstract class BrainRunningTaskBufferMixin<E extends LivingEntity> {
         umce$updateDepth++;
         try {
             if (umce$updateDepth == 1) {
-                if (umce$runningSnapshot == null) umce$runningSnapshot = new BoundedSnapshotBuffer<>(128);
-                ownsBuffer = umce$runningSnapshot.tryAcquire();
+                if (umce$runningSnapshot == null) {
+                    umce$runningSnapshot = new ScopedReusableList<>(ObjectArrayList::new,
+                            list -> ((ObjectArrayList<?>) list).elements().length <= 128);
+                }
+                ownsBuffer = umce$runningSnapshot.acquire() != null;
             }
             original.call(world, entity);
         } finally {
@@ -51,18 +55,19 @@ public abstract class BrainRunningTaskBufferMixin<E extends LivingEntity> {
     @Redirect(method = "updateTasks", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/entity/ai/brain/Brain;getRunningTasks()Ljava/util/List;"))
     private List<Task<? super E>> umce$captureRunningSnapshot(Brain<E> brain) {
-        if (!BrainRunningTaskBufferPatchRuntime.isEnabled() || umce$updateDepth != 1
-                || umce$runningSnapshot == null) {
+        ObjectArrayList<Task<? super E>> snapshot = umce$runningSnapshot == null
+                ? null : umce$runningSnapshot.getAcquired();
+        if (!BrainRunningTaskBufferPatchRuntime.isEnabled() || umce$updateDepth != 1 || snapshot == null) {
             return brain.getRunningTasks();
         }
         // Preserve vanilla's snapshot-before-tick semantics, order, and duplicate occurrences.
         for (Map<Activity, Set<Task<? super E>>> byActivity : tasks.values()) {
             for (Set<Task<? super E>> activityTasks : byActivity.values()) {
                 for (Task<? super E> task : activityTasks) {
-                    if (task.getStatus() == MultiTickTask.Status.RUNNING) umce$runningSnapshot.add(task);
+                    if (task.getStatus() == MultiTickTask.Status.RUNNING) snapshot.add(task);
                 }
             }
         }
-        return umce$runningSnapshot;
+        return snapshot;
     }
 }
